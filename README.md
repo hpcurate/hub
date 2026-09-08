@@ -49,8 +49,9 @@ motion tokens, Grotesk for titles and JetBrains Mono for everything else.
 - **Layout** — four presets (classic, compact, list, poster) and every dial
   underneath them: card shape, where the avatar and the badges sit, avatar size,
   lines for the name, space between cards, card edge and card ground.
-- **Settings for most of it** — accent, corner radius, motion, content width,
-  and a switch for every part of a card.
+- **Settings for most of it** — every text size on the board, accent, corner
+  radius, motion, content width, the avatar's shape and edge, where the new dot
+  sits and what colour it is, and a switch for every part of a card.
 
 Keys: `/` search · `Enter` opens the first result · `n` new channel · `Esc` close.
 

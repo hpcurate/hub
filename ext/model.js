@@ -49,9 +49,29 @@ const HubModel = (() => {
     border:'hairline',        /* hairline | none | accent */
     surface:'raised',         /* raised | flat */
 
+    /* Type sizes. Every one of these is a real px value the sheet reads, so
+       the board can be set to whatever is comfortable rather than to whatever
+       looked right on the machine it was written on. */
+    nameSize:17, descSize:12.5, badgeSize:10, titleSize:54,
+
     /* What a card shows. Off is a real answer for every one of them. */
-    showAvatars:true, avatarShape:'circle', showDesc:true, descLines:4,
+    showAvatars:true, showDesc:true, descLines:4,
     showTag:true, showSeen:true, showNew:true,
+
+    /* The avatar, and how the name sits beside it. */
+    avatarShape:'circle',     /* circle | rounded | square */
+    avatarBorder:'hairline',  /* none | hairline | accent */
+    nameAlign:'center',       /* center | top */
+
+    /* The new-video dot: where it sits, how big, and what colour. Empty colour
+       means the accent, so it follows the rest of the board by default. */
+    newDotPos:'corner',       /* corner | name | avatar */
+    newDotSize:7,
+    newDotColor:'',
+
+    /* Opens as a badge among the others, or as a plain number in the corner at
+       the name's own size. */
+    countStyle:'badge',       /* badge | number */
 
     /* The rest of the badges. Off by default: a card that says nine things
        says nothing, and these are the ones you would go looking for rather

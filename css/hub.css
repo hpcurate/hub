@@ -5,6 +5,19 @@
 */
 
 *,*::before,*::after{box-sizing:border-box}
+
+/* ── hidden means hidden ─────────────────────────────────────────────────────
+   `[hidden]{display:none}` is a user-agent rule, and a user-agent rule loses to
+   any class in this file that sets `display`. Every element HUB hides with the
+   attribute also carries a class that does — `.btn` is inline-flex, `.catbar`
+   and `.blocked-bar` are flex — so all of them were being shown regardless of
+   the attribute. That is what "the filing into menu never disappears" was, and
+   the same bug was quietly showing the blocked bar, the queue button and the
+   delete button on a new channel.
+
+   One rule, at the top, with the weight to win. Anything that needs to hide and
+   then animate out does it with a class, not with this. */
+[hidden]{display:none !important}
 html,body{height:100%}
 body{
   margin:0;background:var(--bg);color:var(--tx);
@@ -175,7 +188,10 @@ kbd{
 .card > *:not(.card-hit){position:relative;z-index:2;pointer-events:none}
 .card-edit{pointer-events:auto}
 
-.card-top{display:flex;align-items:flex-start;gap:8px}
+/* The name lines up with the middle of the picture by default — a 17px name
+   sitting on the top edge of a 30px circle reads as a mistake. */
+.card-top{display:flex;align-items:center;gap:8px}
+.grid[data-name-align="top"] .card-top{align-items:flex-start}
 /* ── The name ────────────────────────────────────────────────────────────────
    It wraps to as many lines as the Lines setting allows, and it must not be cut
    while doing it. Two things were doing the cutting: a line box tighter than
@@ -186,7 +202,7 @@ kbd{
    neighbours. */
 .card-name{
   margin:0;flex:1;min-width:0;
-  font:600 17px/1.32 var(--head);letter-spacing:-.01em;
+  font:600 var(--name-px,17px)/1.32 var(--head);letter-spacing:-.01em;
   overflow-wrap:anywhere;hyphens:auto;
   display:-webkit-box;-webkit-box-orient:vertical;
   -webkit-line-clamp:var(--name-lines,2);
@@ -206,7 +222,7 @@ kbd{
 
 .card-desc{
   margin:0;flex:1;
-  font-size:12.5px;line-height:1.5;color:var(--tx-2);
+  font-size:var(--desc-px,12.5px);line-height:1.5;color:var(--tx-2);
   display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:4;overflow:hidden;
 }
 .card-desc.none{color:var(--mu)}
@@ -578,16 +594,39 @@ input[type="range"]::-moz-range-thumb{
 .card .av{display:none;flex:0 0 auto;width:30px;height:30px;margin:-1px 0 0}
 .card .av.has{display:block}
 .grid.no-avatar .card .av{display:none}
+/* ── The avatar ───────────────────────────────────────────────────────────── */
 .card .av img{
   width:100%;height:100%;object-fit:cover;display:block;
   background:var(--s2);border:var(--bw) solid var(--bd);
   border-radius:var(--r-pill);
 }
-.grid[data-avatar="square"] .card .av img{border-radius:var(--r1)}
+.grid[data-avatar="rounded"] .card .av img{border-radius:calc(var(--r-base) * 1.75)}
+.grid[data-avatar="square"] .card .av img{border-radius:0}
+.grid[data-avatar-border="none"] .card .av img{border-color:transparent}
+.grid[data-avatar-border="accent"] .card .av img{
+  border-color:var(--c);
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--c) 30%,transparent);
+}
 
 /* Something new since you last looked. A dot, not a badge: it is a yes/no. */
-.card .new{display:none;flex:0 0 auto;width:7px;height:7px;margin-top:5px;
-           border-radius:var(--r-pill);background:var(--y)}
+/* ── The new dot ─────────────────────────────────────────────────────────────
+   Three places it can sit, its own size and its own colour. In the name it is
+   part of the line; in the corner and on the avatar it is placed against the
+   card, which is why the card is a containing block. */
+.card .new{
+  display:none;flex:0 0 auto;
+  width:var(--dot-size,7px);height:var(--dot-size,7px);
+  margin-top:calc((1.32em - var(--dot-size,7px)) / 2);
+  border-radius:var(--r-pill);background:var(--dot-c,var(--y));
+}
+.grid[data-dot="corner"] .card .new{position:absolute;top:9px;right:9px;margin:0;z-index:3}
+.grid[data-dot="avatar"] .card .new{
+  position:absolute;margin:0;z-index:3;
+  top:calc(14px + var(--av-size,30px) - var(--dot-size,7px));
+  left:calc(15px + var(--av-size,30px) - var(--dot-size,7px));
+  box-shadow:0 0 0 2px var(--s1);
+}
+.grid[data-dot="avatar"] .card:not(:has(.av.has)) .new{position:static;box-shadow:none}
 .card.is-new .new{display:block}
 .grid.no-new .card .new{display:none}
 .card.is-new{border-color:color-mix(in srgb,var(--y) 26%,var(--bd))}
@@ -662,7 +701,8 @@ input[type="range"]::-moz-range-thumb{
 }
 .badge{
   flex:0 0 auto;
-  font:500 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--tx-2);
+  font:500 var(--badge-px,10px)/1 var(--mono);letter-spacing:.1em;
+  text-transform:uppercase;color:var(--tx-2);
 }
 .badge.never{color:var(--mu)}
 .badge.fresh{color:var(--y)}
@@ -730,3 +770,23 @@ html.cat-mode .card .card-edit{display:none}
 /* ── Presets ─────────────────────────────────────────────────────────────── */
 .presets{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
 .set-preset{align-items:flex-start}
+
+/* ── Opens as a number ───────────────────────────────────────────────────────
+   Not a restyled badge: a different thing to read. It sits in the bottom-right
+   corner of the card at the name's own size and weight, so a board sorted by
+   most-clicked can be read down the numbers alone. */
+.card .card-n{
+  position:absolute;right:13px;bottom:10px;z-index:2;pointer-events:none;
+  font:600 var(--name-px,17px)/1 var(--head);letter-spacing:-.02em;
+  color:var(--tx-2);
+  font-variant-numeric:tabular-nums;
+}
+.grid[data-count="number"] .card .card-foot{padding-right:calc(var(--name-px,17px) * 2.2)}
+.grid[data-layout="list"] .card .card-n{position:static;margin-left:10px}
+.grid[data-layout="list"][data-count="number"] .card .card-foot{padding-right:0}
+
+/* A colour control that is allowed to mean "the accent". */
+.col-wrap{display:flex;align-items:center;gap:8px}
+
+/* The wordmark takes its size from settings now. */
+.h-logo{font-size:var(--title-px,54px)}

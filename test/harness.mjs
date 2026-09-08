@@ -746,6 +746,97 @@ await tick();
 click($('#sheet-set [data-close]'));
 await tick();
 
+
+console.log('\nthe dot, the avatar and the type sizes');
+click($('#btn-set'));
+await tick();
+{
+  const ch = w.Store.channels()[0];
+  w.Store.enrich(ch.id, { avatar:'https://yt3.example/a.jpg',
+                          latest:{ videoId:'vX', title:'fresh', at:Date.now() } });
+  set($('#q'), '');
+  await tick();
+
+  click($('#set-body [data-k="newDotPos"] .seg-b[data-v="avatar"]'));
+  await tick();
+  ok('the dot can be moved', $('#grid').dataset.dot === 'avatar');
+  set($('#s-newDotSize'), '11');
+  await tick();
+  ok('and sized', d.documentElement.style.getPropertyValue('--dot-size') === '11px');
+  ok('it follows the accent to begin with',
+     d.documentElement.style.getPropertyValue('--dot-c') === 'var(--y)');
+  set($('#s-newDotColor'), '#ff8800');
+  await tick();
+  ok('and can be given its own colour',
+     d.documentElement.style.getPropertyValue('--dot-c') === '#ff8800');
+  click($('#set-body [data-k="newDotColor"] .btn'));
+  await tick();
+  ok('and handed back to the accent',
+     d.documentElement.style.getPropertyValue('--dot-c') === 'var(--y)');
+
+  click($('#set-body [data-k="avatarShape"] .seg-b[data-v="rounded"]'));
+  await tick();
+  ok('there is a third avatar shape', $('#grid').dataset.avatar === 'rounded');
+  click($('#set-body [data-k="avatarBorder"] .seg-b[data-v="accent"]'));
+  await tick();
+  ok('the avatar can take an edge',
+     $('#grid').getAttribute('data-avatar-border') === 'accent');
+  click($('#set-body [data-k="nameAlign"] .seg-b[data-v="top"]'));
+  await tick();
+  ok('the name can sit at the top of the picture instead of level with it',
+     $('#grid').getAttribute('data-name-align') === 'top');
+  click($('#set-body [data-k="nameAlign"] .seg-b[data-v="center"]'));
+  await tick();
+
+  set($('#s-nameSize'), '21');
+  await tick();
+  ok('the name has a size', d.documentElement.style.getPropertyValue('--name-px') === '21px');
+  set($('#s-descSize'), '11');
+  await tick();
+  ok('so does the description', d.documentElement.style.getPropertyValue('--desc-px') === '11px');
+  set($('#s-badgeSize'), '12');
+  await tick();
+  ok('and the badges', d.documentElement.style.getPropertyValue('--badge-px') === '12px');
+  set($('#s-titleSize'), '40');
+  await tick();
+  ok('and the wordmark', d.documentElement.style.getPropertyValue('--title-px') === '40px');
+}
+{
+  ok('the count is a badge to begin with', !!$('#grid .card .b-count'));
+  ok('and there is no number', $('#grid .card .card-n').hidden);
+
+  click($('#set-body [data-k="countStyle"] .seg-b[data-v="number"]'));
+  await tick();
+  ok('the number mode says so on the grid', $('#grid').dataset.count === 'number');
+  ok('the badge stands down', !$('#grid .card .b-count'));
+  const n = $$('#grid .card').find(c => c.querySelector('.card-name').textContent === 'aardvark')
+              .querySelector('.card-n');
+  ok('the number is shown', !n.hidden);
+  ok('and it is only a number', /^[0-9]+$/.test(n.textContent), n.textContent);
+  ok('and it is that channel’s own count',
+     n.textContent === String(w.Store.channels().find(c => c.name === 'aardvark').clicks),
+     n.textContent);
+
+  click($('#set-body [data-k="countStyle"] .seg-b[data-v="badge"]'));
+  await tick();
+  ok('and back to a badge', !!$('#grid .card .b-count') && $('#grid .card .card-n').hidden);
+}
+click($('#sheet-set [data-close]'));
+await tick();
+
+console.log('\nhidden really means hidden');
+{
+  /* A user-agent [hidden] rule loses to any class in the sheet that sets
+     display, and most of what HUB hides also carries .btn or .catbar. jsdom
+     does not apply the stylesheet, so this is checked as a fact about the file
+     rather than as a computed style - which is still the fact that matters. */
+  const css = fs.readFileSync(path.join(APP, 'css', 'hub.css'), 'utf8');
+  const rule = css.indexOf('[hidden]{display:none !important}');
+  ok('the sheet forces hidden to win', rule > -1);
+  ok('and does it before anything that sets display',
+     rule > -1 && rule < css.indexOf('display:flex'));
+}
+
 console.log('\nkeys');
 d.dispatchEvent(new w.KeyboardEvent('keydown', { key:'n', bubbles:true }));
 await tick();

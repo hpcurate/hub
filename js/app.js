@@ -116,7 +116,7 @@ function build(ch){
     '<p class="card-desc"></p>' +
     '<div class="card-foot"><button class="tag" type="button" title="Categorise"></button>' +
       '<span class="badges"></span></div>' +
-    '<span class="heat"></span>';
+    '<span class="card-n"></span><span class="heat"></span>';
 
   /* The stamp is written on the way out, on the same click that opens the tab,
      so "last viewed" means "last time I actually went there".
@@ -211,10 +211,20 @@ function badgeContext(){
 let badgeCtx = { rank:new Map(), queued:new Map() };
 
 function paintBadges(el, ch){
+  /* Opens can be a badge among the others, or a plain number in the corner at
+     the name's own size. The second is a different thing to read, not a
+     restyled version of the first, so it is drawn somewhere else entirely and
+     the badge stands down while it is on. */
+  const num = el.querySelector('.card-n');
+  const asNumber = ui.showCounts && ui.countStyle === 'number';
+  num.textContent = asNumber ? String(ch.clicks || 0) : '';
+  num.hidden = !asNumber;
+
   const box = el.querySelector('.badges');
   box.textContent = '';
   BADGES.forEach(b => {
     if (!ui[b.k]) return;
+    if (b.k === 'showCounts' && asNumber) return;
     const text = b.get(ch, badgeCtx);
     if (text == null) return;
     const s = document.createElement('span');
@@ -307,16 +317,31 @@ function paint(el, ch){
    each card from its old position back to its new one. */
 function flip(mutate){
   const before = new Map();
-  if (!REDUCED) nodes.forEach((el, id) => { if (el.isConnected) before.set(id, el.getBoundingClientRect()) });
+  /* Measured against the document, not the viewport. Filtering the board makes
+     it shorter, a shorter page makes the browser clamp the scroll position, and
+     a rect taken before that clamp is in a different frame from one taken
+     after. Every card then looks like it moved by the scroll delta, which is
+     what "all the cards fly in from the top of the screen" was: they were
+     animating from where they would have been if the page had not scrolled. */
+  const sx0 = scrollX, sy0 = scrollY;
+  if (!REDUCED) nodes.forEach((el, id) => {
+    if (!el.isConnected) return;
+    const r = el.getBoundingClientRect();
+    before.set(id, { left:r.left + sx0, top:r.top + sy0 });
+  });
 
   mutate();
 
   if (REDUCED) return;
+  const sx1 = scrollX, sy1 = scrollY;
   nodes.forEach((el, id) => {
     const b = before.get(id); if (!b || !el.isConnected) return;
-    const a = el.getBoundingClientRect();
-    const dx = b.left - a.left, dy = b.top - a.top;
+    const r = el.getBoundingClientRect();
+    const dx = b.left - (r.left + sx1), dy = b.top - (r.top + sy1);
     if (!dx && !dy) return;
+    /* A card that has genuinely moved most of a page is not worth watching
+       travel. Past this it simply appears where it now is. */
+    if (Math.abs(dx) > 1600 || Math.abs(dy) > 1600) return;
     el.animate(
       [{ transform:`translate(${dx}px, ${dy}px)` }, { transform:'none' }],
       { duration:340, easing:'cubic-bezier(.4,0,.2,1)' }
@@ -863,16 +888,24 @@ const widthLabel = w => (!w || w >= WIDTH_FULL) ? 'full width' : w + 'px';
 const PRESETS = [
   { name:'classic', ui:{ layout:'card', avatarPos:'left', badgePos:'bottom',
       avatarSize:30, nameLines:2, gap:12, border:'hairline', surface:'raised',
-      showDesc:true, descLines:4, showAvatars:true } },
+      showDesc:true, descLines:4, showAvatars:true,
+      avatarShape:'circle', avatarBorder:'hairline', nameAlign:'center',
+      countStyle:'badge', newDotPos:'corner', nameSize:17, descSize:12.5, badgeSize:10 } },
   { name:'compact', ui:{ layout:'compact', avatarPos:'left', badgePos:'bottom',
       avatarSize:24, nameLines:1, gap:8, border:'hairline', surface:'raised',
-      showDesc:false, showAvatars:true } },
+      showDesc:false, showAvatars:true,
+      avatarShape:'circle', avatarBorder:'none', nameAlign:'center',
+      countStyle:'badge', newDotPos:'name', nameSize:15, badgeSize:9.5 } },
   { name:'list', ui:{ layout:'list', avatarPos:'left', badgePos:'bottom',
       avatarSize:28, nameLines:1, gap:6, border:'hairline', surface:'flat',
-      showDesc:false, showAvatars:true } },
+      showDesc:false, showAvatars:true,
+      avatarShape:'rounded', avatarBorder:'none', nameAlign:'center',
+      countStyle:'number', newDotPos:'name', nameSize:14.5, badgeSize:9.5 } },
   { name:'poster', ui:{ layout:'card', avatarPos:'top', badgePos:'top',
       avatarSize:52, nameLines:2, gap:16, border:'accent', surface:'raised',
-      showDesc:true, descLines:3, showAvatars:true } },
+      showDesc:true, descLines:3, showAvatars:true,
+      avatarShape:'rounded', avatarBorder:'accent', nameAlign:'top',
+      countStyle:'number', newDotPos:'avatar', nameSize:19, descSize:12, badgeSize:10 } },
 ];
 
 const SETTINGS = [
@@ -885,8 +918,15 @@ const SETTINGS = [
     { k:'avatarSize', t:'range', label:'avatar size', min:20, max:56, step:2, fmt:v => v + 'px' },
     { k:'nameLines',  t:'range', label:'lines for the name', min:1, max:4, step:1, fmt:String },
     { k:'gap',        t:'range', label:'space between cards', min:4, max:28, step:2, fmt:v => v + 'px' },
+    { k:'nameAlign',  t:'seg',   label:'name beside the avatar', opts:['center', 'top'] },
     { k:'border',     t:'seg',   label:'card edge', opts:['hairline', 'none', 'accent'] },
     { k:'surface',    t:'seg',   label:'card ground', opts:['raised', 'flat'] },
+  ]],
+  ['type', [
+    { k:'titleSize', t:'range', label:'the wordmark', min:28, max:80, step:2, fmt:v => v + 'px' },
+    { k:'nameSize',  t:'range', label:'channel name', min:12, max:26, step:.5, fmt:v => v + 'px' },
+    { k:'descSize',  t:'range', label:'description', min:9, max:17, step:.5, fmt:v => v + 'px' },
+    { k:'badgeSize', t:'range', label:'badges', min:8, max:14, step:.5, fmt:v => v + 'px' },
   ]],
   ['look', [
     { k:'accent',   t:'color',  label:'accent colour' },
@@ -899,13 +939,19 @@ const SETTINGS = [
   ['cards', [
     { k:'showAvatars', t:'toggle', label:'channel avatars',
       note:'read off the channel page, in the extension only' },
-    { k:'avatarShape', t:'seg', label:'avatar shape', opts:['circle', 'square'] },
+    { k:'avatarShape', t:'seg', label:'avatar shape', opts:['circle', 'rounded', 'square'] },
+    { k:'avatarBorder', t:'seg', label:'avatar edge', opts:['hairline', 'none', 'accent'] },
     { k:'showNew',     t:'toggle', label:'a dot when a channel has posted since you last looked' },
+    { k:'newDotPos',   t:'seg',   label:'where the dot sits', opts:['corner', 'name', 'avatar'] },
+    { k:'newDotSize',  t:'range', label:'dot size', min:4, max:14, step:1, fmt:v => v + 'px' },
+    { k:'newDotColor', t:'color', label:'dot colour', accent:true },
     { k:'showDesc',    t:'toggle', label:'description' },
     { k:'descLines',   t:'range', label:'description lines', min:1, max:8, step:1, fmt:v => String(v) },
     { k:'showTag',     t:'toggle', label:'category tag' },
     { k:'showSeen',    t:'toggle', label:'time since last viewed' },
     { k:'showCounts',  t:'toggle', label:'click counts' },
+    { k:'countStyle',  t:'seg',   label:'how the count reads',
+      opts:['badge', 'number'], note:'a number sits in the corner at the name size' },
     { k:'showHeat',    t:'toggle', label:'click heat line' },
     { k:'showPosted',  t:'toggle', label:'when the channel last posted',
       note:'read from its feed, in the extension only' },
@@ -955,6 +1001,17 @@ function applyLook(){
   grid.dataset.badges = ui.badgePos;
   grid.dataset.border = ui.border;
   grid.dataset.surface = ui.surface;
+  grid.dataset.avatarBorder = ui.avatarBorder;
+  grid.dataset.nameAlign = ui.nameAlign;
+  grid.dataset.dot = ui.newDotPos;
+  grid.dataset.count = ui.countStyle;
+
+  r.setProperty('--name-px', ui.nameSize + 'px');
+  r.setProperty('--desc-px', ui.descSize + 'px');
+  r.setProperty('--badge-px', ui.badgeSize + 'px');
+  r.setProperty('--title-px', ui.titleSize + 'px');
+  r.setProperty('--dot-size', ui.newDotSize + 'px');
+  r.setProperty('--dot-c', ui.newDotColor || 'var(--y)');
 
   grid.classList.toggle('no-heat',   !ui.showHeat);
   grid.classList.toggle('no-counts', !ui.showCounts);
@@ -1043,10 +1100,26 @@ function control(it){
   }
 
   if (it.t === 'color'){
+    const wrap = document.createElement('div');
+    wrap.className = 'col-wrap';
     const inp = document.createElement('input');
-    inp.type = 'color'; inp.value = ui[it.k]; inp.id = 's-' + it.k;
+    inp.type = 'color';
+    inp.value = /^#[0-9a-f]{6}$/i.test(ui[it.k] || '') ? ui[it.k] : ui.accent;
+    inp.id = 's-' + it.k;
     inp.addEventListener('input', () => write(it.k, inp.value));
-    row.appendChild(inp);
+    wrap.appendChild(inp);
+
+    /* Some colours are allowed to mean "whatever the accent is", which is not
+       something a colour input can say on its own. */
+    if (it.accent){
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn btn-s' + (ui[it.k] ? '' : ' on');
+      b.textContent = 'accent';
+      b.addEventListener('click', () => { write(it.k, ''); renderSettings() });
+      wrap.appendChild(b);
+    }
+    row.appendChild(wrap);
   }
 
   if (it.t === 'seg'){
