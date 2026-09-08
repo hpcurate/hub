@@ -12,7 +12,7 @@ const grid   = $('#grid');
 const chips  = $('#chips');
 const empty  = $('#empty');
 const scrim  = $('#scrim');
-const SHEETS = { ch:$('#sheet-ch'), cat:$('#sheet-cat'), set:$('#sheet-set') };
+const SHEETS = { ch:$('#sheet-ch'), cat:$('#sheet-cat'), set:$('#sheet-set'), q:$('#sheet-q') };
 
 /* Board state. Not persisted beyond the two dials the eye notices across a
    reload — the size of the cards and how they are sorted. A search term and a
@@ -110,7 +110,8 @@ function build(ch){
   el.dataset.id = ch.id;
   el.innerHTML =
     '<a class="card-hit" target="_blank" rel="noopener noreferrer"></a>' +
-    '<div class="card-top"><h3 class="card-name"></h3>' +
+    '<div class="card-top"><span class="av"><img alt="" loading="lazy"></span>' +
+      '<h3 class="card-name"></h3><span class="new" title="new since you last looked"></span>' +
       '<button class="card-edit" title="Edit">\u22ef</button></div>' +
     '<p class="card-desc"></p>' +
     '<div class="card-foot"><button class="tag" type="button" title="Categorise"></button>' +
@@ -128,7 +129,7 @@ function build(ch){
     paintSeen(el, Store.channels().find(c => c.id === ch.id));
     if (typeof HubBridge !== 'undefined' && HubBridge.inExt){
       e.preventDefault();
-      HubBridge.open(ch);
+      HubBridge.open(ch, { newTab: ui.newTab });
     }
   });
   el.querySelector('.card-edit').addEventListener('click', e => {
@@ -194,6 +195,22 @@ function paint(el, ch){
 
   el.querySelector('.card-name').textContent = ch.name;
 
+  /* The avatar is the fastest way to find a channel on a board of forty, and
+     the one thing the board could not say about a channel until now. */
+  const av = el.querySelector('.av');
+  const img = av.querySelector('img');
+  av.classList.toggle('has', !!ch.avatar);
+  if (ch.avatar && img.getAttribute('src') !== ch.avatar) img.src = ch.avatar;
+  if (!ch.avatar) img.removeAttribute('src');
+  /* An avatar url can rotate. A broken image should read as "no avatar", not
+     as a torn page. */
+  img.onerror = () => { av.classList.remove('has'); img.removeAttribute('src') };
+
+  el.classList.toggle('is-new', Store.isNew(ch));
+  const nw = el.querySelector('.new');
+  nw.textContent = '';
+  if (Store.isNew(ch) && ch.latest && ch.latest.title) nw.title = ch.latest.title;
+
   const d = el.querySelector('.card-desc');
   d.textContent = ch.desc || 'no description';
   d.classList.toggle('none', !ch.desc);
@@ -242,9 +259,8 @@ function render(){
   const total = Store.channels().length;
 
   grid.dataset.size = size;
-  grid.classList.toggle('no-heat', !ui.showHeat);
-  grid.classList.toggle('no-counts', !ui.showCounts);
   renderChips();
+  renderQueue();
 
   const cats = Store.cats().length;
   $('#meta').textContent = total
@@ -684,42 +700,207 @@ addEventListener('click', e => { if (!qmenu.contains(e.target)) closeQuick() });
 addEventListener('scroll', closeQuick, true);
 addEventListener('resize', closeQuick);
 
-/* Settings.
-   Every control writes straight through and re-renders the board behind the
-   sheet, so the gradient is chosen by watching the cards change rather than by
-   imagining what two hex values will look like. */
-function renderSettings(){
-  $('#s-heat-from').value = ui.heatFrom;
-  $('#s-heat-to').value = ui.heatTo;
-  $('#s-width').value = ui.maxWidth || 2600;
-  $('#s-width-v').textContent = widthLabel(ui.maxWidth);
-  $('#s-heat-prev').style.background =
-    'linear-gradient(90deg,' + ui.heatFrom + ',' + ui.heatTo + ')';
+/* ── Settings ────────────────────────────────────────────────────────────────
+   The controls are a list, not markup. There are enough of them now that
+   writing each one out by hand is how two of them end up behaving differently,
+   and adding one should be a line rather than a form.
 
-  $$('#sheet-set .tog').forEach(t => t.classList.toggle('on', !!ui[t.dataset.ui]));
-
-  /* Add mode only means something with a browser around it. */
-  $('#s-addmode').hidden = !(typeof HubBridge !== 'undefined' && HubBridge.inExt);
-}
-
-/* The top of the range is "as wide as the window" rather than 2600px. An
-   ultrawide is wider than any number worth putting on a slider, so the end of
-   the track has to mean *off* or the setting cannot express it. */
+   Every entry names a key in the stored ui object. Writing it is the same three
+   steps whatever the control is: store it, apply the look, redraw the board.
+   `ext` marks the ones that only mean something with a browser around them. */
 const WIDTH_FULL = 2600;
 const widthLabel = w => (!w || w >= WIDTH_FULL) ? 'full width' : w + 'px';
 
-function applyWidth(){
-  const w = ui.maxWidth;
-  document.documentElement.style.setProperty(
-    '--app-w', (!w || w >= WIDTH_FULL) ? 'none' : w + 'px');
+const SETTINGS = [
+  ['look', [
+    { k:'accent',   t:'color',  label:'accent colour' },
+    { k:'maxWidth', t:'range',  label:'content width', min:880, max:WIDTH_FULL, step:40,
+      note:'an ultrawide does not want the whole screen', fmt:widthLabel, full:WIDTH_FULL },
+    { k:'radius',   t:'range',  label:'corner radius', min:0, max:16, step:1, fmt:v => v + 'px' },
+    { k:'motion',   t:'range',  label:'motion', min:0, max:2, step:0.1,
+      fmt:v => v <= 0 ? 'none' : (+v).toFixed(1) + 'x' },
+  ]],
+  ['cards', [
+    { k:'showAvatars', t:'toggle', label:'channel avatars',
+      note:'read off the channel page, in the extension only' },
+    { k:'avatarShape', t:'seg', label:'avatar shape', opts:['circle', 'square'] },
+    { k:'showNew',     t:'toggle', label:'a dot when a channel has posted since you last looked' },
+    { k:'showDesc',    t:'toggle', label:'description' },
+    { k:'descLines',   t:'range', label:'description lines', min:1, max:8, step:1, fmt:v => String(v) },
+    { k:'showTag',     t:'toggle', label:'category tag' },
+    { k:'showSeen',    t:'toggle', label:'time since last viewed' },
+    { k:'showCounts',  t:'toggle', label:'click counts' },
+    { k:'showHeat',    t:'toggle', label:'click heat line' },
+    { k:'heat',        t:'heat',   label:'heat gradient',
+      note:'from the channel you open least to the one you open most' },
+  ]],
+  ['board', [
+    { k:'hideEmpty',  t:'toggle', label:'hide empty categories' },
+    { k:'enterOpens', t:'toggle', label:'enter opens the first result',
+      note:'type in search, press enter' },
+    { k:'newTab',     t:'toggle', label:'open channels in a new tab', ext:true },
+  ]],
+  ['youtube', [
+    { k:'addMode',     t:'toggle', label:'add mode',
+      note:'stops the guard and puts a + add button on channel pages', ext:true },
+    { k:'queueButton', t:'toggle', label:'a + queue button on video pages', ext:true },
+    { k:'checkNew',    t:'toggle', label:'check channels for new videos', ext:true },
+    { k:'checkEvery',  t:'range',  label:'how often', min:1, max:48, step:1,
+      fmt:v => v + 'h', ext:true },
+  ]],
+];
+
+const inExt = () => typeof HubBridge !== 'undefined' && HubBridge.inExt;
+
+/* ── Applying it ─────────────────────────────────────────────────────────────
+   Four of the dials are tokens the whole stylesheet already draws with, so
+   setting them here moves the system rather than one rule. The card toggles are
+   classes on the grid, for the same reason: one switch, not a pass over every
+   card. */
+function applyLook(){
+  const r = document.documentElement.style;
+  r.setProperty('--app-w', (!ui.maxWidth || ui.maxWidth >= WIDTH_FULL) ? 'none' : ui.maxWidth + 'px');
+  r.setProperty('--y', ui.accent);
+  r.setProperty('--r-base', ui.radius + 'px');
+  r.setProperty('--mo', String(ui.motion));
+  r.setProperty('--desc-lines', String(ui.descLines));
+
+  grid.classList.toggle('no-heat',   !ui.showHeat);
+  grid.classList.toggle('no-counts', !ui.showCounts);
+  grid.classList.toggle('no-avatar', !ui.showAvatars);
+  grid.classList.toggle('no-desc',   !ui.showDesc);
+  grid.classList.toggle('no-tag',    !ui.showTag);
+  grid.classList.toggle('no-seen',   !ui.showSeen);
+  grid.classList.toggle('no-new',    !ui.showNew);
+  grid.dataset.avatar = ui.avatarShape;
 }
 
-$('#s-width').addEventListener('input', e => {
-  const v = +e.target.value;
-  ui = Store.setUi({ maxWidth: v >= WIDTH_FULL ? 0 : v });
-  $('#s-width-v').textContent = widthLabel(ui.maxWidth);
-  applyWidth();
-});
+function write(key, value){
+  ui = Store.setUi({ [key]: value });
+  applyLook();
+  render();
+  if (key === 'addMode' && inExt()) HubBridge.ask({ type:'setAddMode', on:ui.addMode });
+}
+
+function renderSettings(){
+  const box = $('#set-body');
+  box.textContent = '';
+
+  SETTINGS.forEach(([name, items]) => {
+    const live = items.filter(it => !it.ext || inExt());
+    if (!live.length) return;
+    const h = document.createElement('p');
+    h.className = 'set-h';
+    h.textContent = name;
+    box.appendChild(h);
+    live.forEach(it => box.appendChild(control(it)));
+  });
+
+  $('#s-refresh').hidden = !(typeof HubEnrich !== 'undefined' && HubEnrich.can());
+}
+
+function control(it){
+  const row = document.createElement('div');
+  row.className = 'set-r set-' + it.t;
+  row.dataset.k = it.k;      /* the key this row writes, for tests and for hooks */
+
+  const lab = document.createElement('div');
+  lab.className = 'set-l';
+  const t = document.createElement('span');
+  t.className = 'set-t';
+  t.textContent = it.label;
+  lab.appendChild(t);
+  if (it.note){
+    const n = document.createElement('em');
+    n.textContent = it.note;
+    lab.appendChild(n);
+  }
+  row.appendChild(lab);
+
+  if (it.t === 'toggle'){
+    row.classList.add('as-button');
+    row.appendChild(document.createElement('b'));
+    row.classList.toggle('on', !!ui[it.k]);
+    row.setAttribute('role', 'button');
+    row.tabIndex = 0;
+    const flip = () => { write(it.k, !ui[it.k]); row.classList.toggle('on', !!ui[it.k]) };
+    row.addEventListener('click', flip);
+    row.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); flip() }
+    });
+  }
+
+  if (it.t === 'range'){
+    const wrap = document.createElement('div');
+    wrap.className = 'set-range';
+    const inp = document.createElement('input');
+    inp.type = 'range'; inp.min = it.min; inp.max = it.max; inp.step = it.step;
+    inp.value = (it.full && !ui[it.k]) ? it.full : ui[it.k];
+    inp.id = 's-' + it.k;
+    const out = document.createElement('output');
+    out.textContent = it.fmt(ui[it.k]);
+    inp.addEventListener('input', () => {
+      const raw = +inp.value;
+      /* The top of a "full" range means off, not its own number: an ultrawide
+         is wider than anything worth putting on a track. */
+      const v = (it.full && raw >= it.full) ? 0 : raw;
+      write(it.k, v);
+      out.textContent = it.fmt(v);
+    });
+    wrap.append(inp, out);
+    row.appendChild(wrap);
+  }
+
+  if (it.t === 'color'){
+    const inp = document.createElement('input');
+    inp.type = 'color'; inp.value = ui[it.k]; inp.id = 's-' + it.k;
+    inp.addEventListener('input', () => write(it.k, inp.value));
+    row.appendChild(inp);
+  }
+
+  if (it.t === 'seg'){
+    const seg = document.createElement('div');
+    seg.className = 'seg';
+    it.opts.forEach(o => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'seg-b wide' + (ui[it.k] === o ? ' on' : '');
+      b.textContent = o;
+      b.dataset.v = o;
+      b.addEventListener('click', () => {
+        write(it.k, o);
+        [...seg.children].forEach(x => x.classList.toggle('on', x === b));
+      });
+      seg.appendChild(b);
+    });
+    row.appendChild(seg);
+  }
+
+  if (it.t === 'heat'){
+    const wrap = document.createElement('div');
+    wrap.className = 'heat-pick';
+    const prev = document.createElement('div');
+    prev.className = 'heat-prev'; prev.id = 's-heat-prev';
+    const paint = () => { prev.style.background =
+      'linear-gradient(90deg,' + ui.heatFrom + ',' + ui.heatTo + ')' };
+    const well = (key, tag, label) => {
+      const l = document.createElement('label');
+      l.className = 'col-in';
+      const i2 = document.createElement('input');
+      i2.type = 'color'; i2.value = ui[key]; i2.id = 's-heat-' + tag;
+      i2.addEventListener('input', () => { write(key, i2.value); paint() });
+      const s2 = document.createElement('span');
+      s2.textContent = label;
+      l.append(i2, s2);
+      return l;
+    };
+    paint();
+    wrap.append(well('heatFrom', 'from', 'least'), prev, well('heatTo', 'to', 'most'));
+    row.appendChild(wrap);
+  }
+
+  return row;
+}
 
 /* ── Export and import ───────────────────────────────────────────────────── */
 const said = msg => { $('#s-said').textContent = msg;
@@ -752,31 +933,25 @@ $('#s-file').addEventListener('change', async e => {
   sortSel.value = sort;
   $$('#size .seg-b').forEach(b => b.classList.toggle('on', b.dataset.size === size));
   picked.clear();
-  applyWidth();
+  applyLook();
   renderSettings();
   render();
-  said('imported ' + out.channels + ' channels, ' + out.cats + ' categories');
+  said('imported ' + out.channels + ' channels, ' + out.cats + ' categories'
+       + (out.queue ? ', ' + out.queue + ' queued' : ''));
 });
-
-['From', 'To'].forEach(end => {
-  $('#s-heat-' + end.toLowerCase()).addEventListener('input', e => {
-    ui = Store.setUi({ ['heat' + end]: e.target.value });
-    renderSettings(); render();
-  });
-});
-
-$$('#sheet-set .tog').forEach(t => t.addEventListener('click', () => {
-  const key = t.dataset.ui;
-  ui = Store.setUi({ [key]: !ui[key] });
-  renderSettings();
-  render();
-  /* Add mode is the one setting the extension has to hear about. */
-  if (key === 'addMode' && typeof HubBridge !== 'undefined' && HubBridge.inExt)
-    HubBridge.ask({ type:'setAddMode', on:ui.addMode });
-}));
 
 /* ── Bar ─────────────────────────────────────────────────────────────────── */
 $('#q').addEventListener('input', e => { q = e.target.value; render() });
+
+/* Type three letters, press enter, you are on the channel. It is the difference
+   between a board you read and a launcher you use. */
+$('#q').addEventListener('keydown', e => {
+  if (e.key !== 'Enter' || !ui.enterOpens) return;
+  const first = grid.querySelector('.card .card-hit');
+  if (!first) return;
+  e.preventDefault();
+  first.click();
+});
 
 const sortSel = $('#sort');
 sortSel.addEventListener('change', e => { sort = e.target.value; Store.setUi({ sort }); render() });
@@ -789,6 +964,107 @@ $$('#size .seg-b').forEach(b => {
     render();                        /* FLIP carries the cards to their new boxes */
   });
 });
+
+
+/* ── The queue ───────────────────────────────────────────────────────────────
+   Watch Later lives behind the feed, and the feed is the thing the guard takes
+   away. This is the replacement, and it belongs to HUB: filled by the "+ queue"
+   button on a video page, emptied here.
+
+   Opening one grants that single video rather than its channel. A video you put
+   aside is a thing you chose, not a door into everything its channel has posted. */
+function renderQueue(){
+  const list = Store.queue();
+  const btn = $('#btn-q');
+  btn.hidden = !list.length && !HubBridge.inExt;
+  $('#q-n').textContent = list.length ? String(list.length) : '';
+  btn.classList.toggle('has', !!list.length);
+
+  const box = $('#q-list');
+  if (!box) return;
+  box.textContent = '';
+  $('#q-clear').hidden = !list.length;
+
+  if (!list.length){
+    const p = document.createElement('p');
+    p.className = 'q-empty';
+    p.textContent = HubBridge.inExt
+      ? 'nothing put aside yet. the + queue button on a video page fills this.'
+      : 'the queue is filled from youtube, which needs the extension.';
+    box.appendChild(p);
+    return;
+  }
+
+  list.forEach(item => {
+    const r = document.createElement('div');
+    r.className = 'q-r';
+
+    const a = document.createElement('a');
+    a.className = 'q-open';
+    a.href = item.url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.addEventListener('click', e => {
+      if (!HubBridge.inExt) return;
+      e.preventDefault();
+      HubBridge.ask({ type:'openVideo', url:item.url, videoId:item.videoId });
+    });
+
+    const t = document.createElement('span');
+    t.className = 'q-t';
+    t.textContent = item.title;
+    a.appendChild(t);
+
+    if (item.channel){
+      const c = document.createElement('span');
+      c.className = 'q-c';
+      c.textContent = item.channel;
+      a.appendChild(c);
+    }
+    r.appendChild(a);
+
+    const x = document.createElement('button');
+    x.type = 'button'; x.className = 'cat-x';
+    x.textContent = String.fromCharCode(215);
+    x.title = 'Remove from the queue';
+    x.addEventListener('click', () => { Store.dequeue(item.id); renderQueue() });
+    r.appendChild(x);
+
+    box.appendChild(r);
+  });
+}
+
+$('#btn-q').addEventListener('click', () => { renderQueue(); openSheet('q') });
+$('#q-clear').addEventListener('click', function(){
+  if (!this.classList.contains('armed')){
+    this.classList.add('armed'); this.textContent = 'sure?';
+    return;
+  }
+  Store.clearQueue();
+  this.classList.remove('armed'); this.textContent = 'clear all';
+  renderQueue();
+});
+
+/* ── Looking channels up ─────────────────────────────────────────────────────
+   The button is the manual pass; the automatic one runs once on a cold start,
+   and only over what is missing or stale. */
+$('#s-refresh').addEventListener('click', async () => {
+  if (HubEnrich.busy()) return;
+  const out = await HubEnrich.pass({ force:true, ui });
+  said('looked up ' + out.done + (out.failed ? ', ' + out.failed + ' would not answer' : ''));
+  render();
+});
+
+if (typeof HubEnrich !== 'undefined'){
+  /* Each channel is written the moment its answer comes back, so the board is
+     redrawn as the pass runs rather than all at once at the end. Avatars
+     arriving one at a time reads as the thing working; forty of them appearing
+     together a minute later reads as a reload. */
+  HubEnrich.onProgress(p => {
+    if (p) said('looking up ' + p.at + ' of ' + p.of);
+    render();
+  });
+}
 
 /* ── Keys ────────────────────────────────────────────────────────────────────
    Three, and only where they cannot be mistaken for typing. */
@@ -839,8 +1115,15 @@ Store.onChange(() => { ui = Store.ui(); render() });
   sort = ui.sort; size = ui.size;
   sortSel.value = sort;
   $$('#size .seg-b').forEach(b => b.classList.toggle('on', b.dataset.size === size));
-  applyWidth();
+  applyLook();
   render();
+
+  /* One quiet pass in the background, over whatever is missing or stale. It
+     never blocks the board: the cards are already on screen, and each channel
+     redraws as its own answer comes back. */
+  if (typeof HubEnrich !== 'undefined' && HubEnrich.can() && ui.checkNew !== false){
+    HubEnrich.pass({ ui }).then(out => { if (out.done) render() });
+  }
 })();
 
 })();

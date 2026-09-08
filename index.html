@@ -76,6 +76,7 @@
     </div>
 
     <button class="btn" id="btn-cats" title="Manage categories">categories</button>
+    <button class="btn" id="btn-q" title="Queue" hidden>queue<span class="btn-n" id="q-n"></span></button>
     <button class="btn" id="btn-set" title="Settings">settings</button>
   </div>
 
@@ -161,51 +162,44 @@
   </div>
 </section>
 
-<!-- ── settings ─────────────────────────────────────────────────────────── -->
-<section class="sheet" id="sheet-set" hidden aria-modal="true" role="dialog" aria-label="Settings">
+<!-- ── settings ─────────────────────────────────────────────────────────
+     The controls are built from a list in app.js rather than written out here.
+     There are enough of them now that a spec is the only way they stay
+     consistent with each other, and adding one should be a line, not a form. -->
+<section class="sheet wide" id="sheet-set" hidden aria-modal="true" role="dialog" aria-label="Settings">
   <div class="sheet-in">
     <h2 class="sh-t">settings</h2>
-
-    <div class="row">
-      <span class="row-k">click heat</span>
-      <p class="row-s">the line under each card, from the channel you open least to the one you open most</p>
-      <div class="heat-pick">
-        <label class="col-in"><input type="color" id="s-heat-from"><span>least</span></label>
-        <div class="heat-prev" id="s-heat-prev"></div>
-        <label class="col-in"><input type="color" id="s-heat-to"><span>most</span></label>
-      </div>
-    </div>
-
-    <div class="row">
-      <span class="row-k">content width</span>
-      <p class="row-s">how wide the board is allowed to get. an ultrawide does not want the whole screen.</p>
-      <div class="width-pick">
-        <input type="range" id="s-width" min="880" max="2600" step="40">
-        <output id="s-width-v"></output>
-      </div>
-    </div>
-
-    <div class="togs">
-      <button type="button" class="tog" data-ui="showHeat"><span>show the heat line</span><b></b></button>
-      <button type="button" class="tog" data-ui="showCounts"><span>show click counts</span><b></b></button>
-      <button type="button" class="tog" data-ui="hideEmpty"><span>hide empty categories</span><b></b></button>
-      <button type="button" class="tog" data-ui="addMode" id="s-addmode" hidden>
-        <span>add mode <em>&mdash; stops the guard, puts a + add button on channel pages</em></span><b></b>
-      </button>
-    </div>
+    <div class="set-body" id="set-body"></div>
 
     <div class="row">
       <span class="row-k">your data</span>
-      <p class="row-s" id="s-data-note">a file you hold is a copy nothing can take. import replaces everything on this board.</p>
+      <p class="row-s">a file you hold is a copy nothing can take. import replaces everything on this board.</p>
       <div class="data-acts">
         <button type="button" class="btn btn-s" id="s-export">export</button>
         <button type="button" class="btn btn-s" id="s-import">import</button>
         <input type="file" id="s-file" accept="application/json,.json" hidden>
+        <button type="button" class="btn btn-s" id="s-refresh" hidden>refresh channel info</button>
         <span class="data-said" id="s-said"></span>
       </div>
     </div>
 
     <div class="sh-acts">
+      <span class="grow"></span>
+      <button type="button" class="btn" data-close>done</button>
+    </div>
+  </div>
+</section>
+
+<!-- ── the queue ────────────────────────────────────────────────────────────
+     What Watch Later was, before the guard took the feed away. Filled from the
+     "+ queue" button on a video page. -->
+<section class="sheet wide" id="sheet-q" hidden aria-modal="true" role="dialog" aria-label="Queue">
+  <div class="sheet-in">
+    <h2 class="sh-t">queue</h2>
+    <p class="sh-s">videos you put aside. opening one lets you watch that video, not its whole channel.</p>
+    <div class="q-list" id="q-list"></div>
+    <div class="sh-acts">
+      <button type="button" class="btn btn-danger" id="q-clear" hidden>clear all</button>
       <span class="grow"></span>
       <button type="button" class="btn" data-close>done</button>
     </div>
@@ -218,8 +212,10 @@
 
 <script src="ext/scope.js"></script>
 <script src="ext/model.js"></script>
+<script src="ext/yt.js"></script>
 <script src="js/store.js"></script>
 <script src="js/bridge.js"></script>
+<script src="js/enrich.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

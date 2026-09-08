@@ -24,6 +24,7 @@
 
   let bypass = false;                        /* set by the board, or by escape */
   let addBtn = null;
+  let addKind = null;                        /* what the injected button is for */
   let lastUrl = location.href;
   let seq = 0;                               /* cancels the work of a stale url */
   let gone = false;                          /* a redirect is under way */
@@ -166,37 +167,189 @@
   function dropAdd(){
     if (!addBtn) return;
     addBtn.remove(); addBtn = null;
+    addKind = null;
   }
 
-  function mountAdd(scope){
-    if (addBtn) return;
-    let cssUrl, root;
+  /* ── Where the button goes ───────────────────────────────────────────────────
+     Asked for: in the channel page's own action row, beside Subscribe and Join.
+     That row has been re-spelled several times, so several spellings are tried
+     and the first that is actually on the page wins. If none is — a layout that
+     has moved on, or a page that has not finished building — it falls back to
+     the floating position rather than not appearing at all. A button you cannot
+     find is the same as no button. */
+  const ROW_SEL = [
+    'yt-flexible-actions-view-model',
+    '#page-header yt-flexible-actions-view-model',
+    'ytd-c4-tabbed-header-renderer #buttons',
+    '#channel-header-container #buttons',
+    'ytd-channel-header-renderer #buttons',
+    '#inner-header-container #buttons',
+  ];
+
+  function findRow(){
+    for (const sel of ROW_SEL){
+      const el = document.querySelector(sel);
+      if (el) return el;
+    }
+    return null;
+  }
+
+  function whenRow(ms, then){
+    const now = findRow();
+    if (now) return then(now);
+    let obs;
+    const stop = el => { try { obs && obs.disconnect() } catch {} ; then(el) };
+    const t = setTimeout(() => stop(null), ms);
+    obs = new MutationObserver(() => {
+      const el = findRow();
+      if (el){ clearTimeout(t); stop(el) }
+    });
+    obs.observe(document.documentElement, { childList:true, subtree:true });
+  }
+
+  /* One button, one shadow root, whatever it says. `kind` is what stops it
+     being rebuilt on every SPA tick, and what lets a page change its mind. */
+  function mountButton(kind, { label, sub, onClick, inline }){
+    if (addBtn && addKind === kind) return;
+    dropAdd();
+
+    let cssUrl;
     try { cssUrl = chrome.runtime.getURL('ext/add.css') } catch { return }
 
+    addKind = kind;
     addBtn = document.createElement('div');
     addBtn.id = ADD_ID;
-    root = addBtn.attachShadow({ mode:'open' });
+    const root = addBtn.attachShadow({ mode:'open' });
 
     const css = document.createElement('link');
     css.rel = 'stylesheet'; css.href = cssUrl;
 
     const b = document.createElement('button');
     b.className = 'btn';
-    b.innerHTML = '+ add to hub<small>add mode</small>';
+    const say = (text, note, cls) => {
+      b.textContent = text;
+      if (note){ const s2 = document.createElement('small'); s2.textContent = note; b.appendChild(s2) }
+      if (cls) b.classList.add(cls);
+    };
+    say(label, sub);
 
     b.addEventListener('click', async () => {
       if (b.classList.contains('done') || b.classList.contains('have')) return;
-      const res = await ask({ type:'addChannel',
-                              url: HubScope.channelUrl(scope),
-                              name: channelTitle() });
+      const res = await onClick();
       if (!res) return;
-      b.classList.add(res.already ? 'have' : 'done');
-      b.innerHTML = (res.already ? 'already on the board' : 'added')
-                  + '<small>' + (res.already ? '' : 'add mode') + '</small>';
+      b.textContent = '';
+      b.classList.remove('done', 'have');
+      say(res.text, res.sub || '', res.already ? 'have' : 'done');
     });
 
     root.append(css, b);
+
+    /* Shown at once, floating, and moved into the channel's action row when
+       that row turns up. Waiting for the row before showing anything would mean
+       seconds with no button on a page that is still building itself, and the
+       row does not always arrive at all. */
     html.appendChild(addBtn);
+
+    if (inline) whenRow(6000, row => {
+      if (!row || !addBtn) return;
+      addBtn.classList.add('inline');
+      b.classList.add('inline');
+      row.appendChild(addBtn);
+    });
+  }
+
+  /* ── The three things it can be ─────────────────────────────────────────── */
+  function addOnChannel(scope){
+    mountButton('channel:' + scope.kind + scope.key, {
+      label:'+ add to hub', sub:'add mode', inline:true,
+      onClick: async () => {
+        const res = await ask({ type:'addChannel',
+                                url: HubScope.channelUrl(scope), name: channelTitle() });
+        if (!res) return null;
+        return { text: res.already ? 'already on the board' : 'added',
+                 sub: res.already ? '' : 'add mode', already: res.already };
+      },
+    });
+  }
+
+  /* Every channel linked from the subscriptions page, in one pass. */
+  function collectChannels(){
+    const seen = new Set(), out = [];
+    document.querySelectorAll('a[href]').forEach(a => {
+      const href = a.getAttribute('href') || '';
+      const scope = HubScope.parse(href);
+      if (!scope) return;
+      const key = scope.kind + ':' + scope.key;
+      if (seen.has(key)) return;
+      seen.add(key);
+      const row = a.closest('ytd-channel-renderer, ytd-grid-channel-renderer, ytd-item-section-renderer') || a;
+      const titled = row.querySelector && row.querySelector('#channel-title, #text, yt-formatted-string');
+      const name = ((titled && titled.textContent) || a.textContent || '').trim().split(String.fromCharCode(10))[0];
+      out.push({ url: HubScope.channelUrl(scope), name: name.slice(0, 80) });
+    });
+    return out;
+  }
+
+  function addAllHere(){
+    mountButton('bulk', {
+      label:'+ add every channel here', sub:'add mode', inline:false,
+      onClick: async () => {
+        const items = collectChannels();
+        if (!items.length) return { text:'nothing to add here', already:true };
+        const res = await ask({ type:'addMany', items });
+        if (!res) return null;
+        return { text: res.added ? 'added ' + res.added : 'all of them were already on the board',
+                 sub: res.added ? 'of ' + res.seen + ' found' : '', already: !res.added };
+      },
+    });
+  }
+
+  function queueHere(page){
+    if (!page.videoId) return;
+    mountButton('queue:' + page.videoId, {
+      label:'+ queue', sub:'watch later', inline:false,
+      onClick: async () => {
+        const owner = readOwner();
+        const res = await ask({ type:'enqueue', videoId:page.videoId, url:location.href,
+                                title:channelTitle(),
+                                channelUrl: owner ? HubScope.channelUrl(owner) : '' });
+        if (!res) return null;
+        return { text: res.already ? 'already queued' : 'queued',
+                 sub:'', already: res.already };
+      },
+    });
+  }
+
+  /* What, if anything, gets drawn on this page. One place, so the three
+     buttons can never be on screen together and none is left behind by an SPA
+     navigation. */
+  const FEED_PAGES = ['/feed/channels', '/feed/subscriptions'];
+
+  function draw(status, page){
+    if (!status) return dropAdd();
+
+    if (status.addMode){
+      if (page && page.type === 'channel') return addOnChannel(page.scope);
+      if (FEED_PAGES.some(p => location.pathname.startsWith(p))) return addAllHere();
+    }
+    /* The queue button is not part of add mode: queueing a video you are
+       already allowed to be watching is an ordinary thing to want. */
+    if (status.queueButton !== false && page && page.type === 'watch') return queueHere(page);
+
+    dropAdd();
+  }
+
+  function block(){
+    veil();
+    dropAdd();
+    try { sendToBoard() }
+    catch (err){
+      /* A board that cannot even be addressed must not leave a veiled page.
+         That is the trap this whole file is written to avoid. */
+      console.warn('[HUB] could not reach the board, standing down', err);
+      bypass = true;
+      unveil();
+    }
   }
 
   /* ── The decision ────────────────────────────────────────────────────────── */
@@ -213,23 +366,21 @@
        the same thing here: not our page. */
     if (!status || !status.guarding){
       unveil();
-      /* Add mode is the one "not guarding" that still draws something. */
-      const page = HubScope.classify(location.href);
-      if (status && status.addMode && page.type === 'channel') mountAdd(page.scope);
-      else dropAdd();
+      draw(status, HubScope.classify(location.href));
       return;
     }
-    dropAdd();
 
     const first = HubScope.decide(location.href, status.grant, null);
 
     if (first.state === 'allow'){
       unveil();
+      draw(status, first.page);
       if (first.page && first.page.type === 'channel') learnAliases();
       return;
     }
+    dropAdd();
 
-    if (first.state === 'block') return sendToBoard();
+    if (first.state === 'block') return block();
 
     /* Pending: a watch page whose owner has not been read yet.
        v0.2.0 unveiled here and checked afterwards, which let a video of anyone
@@ -246,9 +397,10 @@
     const again = HubScope.decide(location.href, status.grant, owner);
     if (again.state === 'allow'){
       if (first.page && first.page.videoId) ask({ type:'cleared', videoId:first.page.videoId });
-      return unveil();
+      unveil();
+      return draw(status, first.page);
     }
-    sendToBoard();
+    block();
   }
 
   /* ── Pre-clearing a click ────────────────────────────────────────────────────

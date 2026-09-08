@@ -13,7 +13,7 @@
    variable that matters. storage.session survives the restart; the in-memory
    map is only a write queue.
 */
-importScripts('scope.js', 'model.js');
+importScripts('scope.js', 'model.js', 'yt.js');
 
 const SETTINGS = { enabled:true, snoozeUntil:0 };
 
@@ -63,6 +63,17 @@ async function uiSettings(){
   try { return { ...HubModel.DEFAULT_UI, ...(typeof raw === 'string' ? JSON.parse(raw) : raw || {}) } }
   catch { return { ...HubModel.DEFAULT_UI } }
 }
+/* The two halves of every list this worker writes. Channels and the queue live
+   as JSON strings in chrome.storage.local, the same shape the board reads. */
+async function readList(key){
+  const bag = await chrome.storage.local.get([key]);
+  const raw = bag[key];
+  let list;
+  try { list = JSON.parse(typeof raw === 'string' ? raw : '[]') } catch { list = [] }
+  return Array.isArray(list) ? list : [];
+}
+const writeList = (key, list) => chrome.storage.local.set({ [key]: JSON.stringify(list) });
+
 async function patchUi(patch){
   const next = { ...(await uiSettings()), ...patch };
   await chrome.storage.local.set({ [HubModel.KEYS.UI]: JSON.stringify(next) });
@@ -81,6 +92,7 @@ async function statusFor(tabId){
     enabled: s.enabled,
     snoozeUntil: s.snoozeUntil || 0,
     addMode: !!u.addMode,
+    queueButton: u.queueButton !== false,
     bypassed: dismissed,
     guarding: s.enabled && !paused && !u.addMode && !dismissed,
     grant: tabId == null ? null : await grantFor(tabId),
@@ -146,6 +158,47 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
         await patchUi({ addMode: !!msg.on });
         return reply(await statusFor(msg.tabId != null ? msg.tabId : tabId));
 
+      /* Filed from the "+ queue" button on a video page. The queue is HUB's
+         answer to Watch Later, which lives behind the feed the guard removes. */
+      case 'enqueue': {
+        if (!msg.videoId) return reply({ ...(await statusFor(tabId)), added:false });
+        const out = await serial(async () => {
+          const list = await readList(HubModel.KEYS.Q);
+          if (list.some(q => q.videoId === msg.videoId)) return { already:true };
+          list.unshift(HubModel.makeQueued(msg));
+          await writeList(HubModel.KEYS.Q, list);
+          return { already:false };
+        });
+        return reply({ ...(await statusFor(tabId)), added:!out.already, already:out.already });
+      }
+
+      /* Every channel on the subscriptions page at once. Seeding the board one
+         channel at a time was the tedious part, and this is the page that
+         already knows the whole list. */
+      case 'addMany': {
+        const items = Array.isArray(msg.items) ? msg.items : [];
+        const out = await serial(async () => {
+          const list = await readList(HubModel.KEYS.CH);
+          const has = url => {
+            const s2 = HubScope.parse(url);
+            return !s2 || list.some(c => {
+              const s3 = HubScope.parse(c.url);
+              return s3 && s3.kind === s2.kind && s3.key === s2.key;
+            });
+          };
+          let added = 0;
+          for (const it of items){
+            const url = HubModel.normUrl(it && it.url);
+            if (!url || has(url)) continue;
+            list.push(HubModel.makeChannel({ url, name:it.name, desc:'', cat:'' }));
+            added++;
+          }
+          if (added) await writeList(HubModel.KEYS.CH, list);
+          return { added, seen:items.length };
+        });
+        return reply({ ...(await statusFor(tabId)), ...out });
+      }
+
       /* Filed from the "+ add" button on a channel page. The board's list lives
          in chrome.storage.local, which a content script on youtube.com cannot
          touch and this worker can — so the write happens here, in the one record
@@ -156,12 +209,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
         if (!scope) return reply({ ...(await statusFor(tabId)), added:false });
 
         const out = await serial(async () => {
-          const bag = await chrome.storage.local.get([HubModel.KEYS.CH]);
-          const raw = bag[HubModel.KEYS.CH];
-          let list;
-          try { list = JSON.parse(typeof raw === 'string' ? raw : '[]') } catch { list = [] }
-          if (!Array.isArray(list)) list = [];
-
+          const list = await readList(HubModel.KEYS.CH);
           /* Same channel, whichever way its url is spelled. */
           const already = list.some(c => {
             const s2 = HubScope.parse(c.url);
@@ -170,11 +218,22 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
           if (already) return { already:true };
 
           list.push(HubModel.makeChannel({ url, name:msg.name, desc:'', cat:'' }));
-          await chrome.storage.local.set({ [HubModel.KEYS.CH]: JSON.stringify(list) });
+          await writeList(HubModel.KEYS.CH, list);
           return { already:false };
         });
 
         return reply({ ...(await statusFor(tabId)), added:!out.already, already:out.already });
+      }
+
+      /* Opening something out of the queue. The tab is granted that one video
+         rather than its whole channel: a queued video is a thing you chose,
+         not a door into everything its channel has ever posted. */
+      case 'openVideo': {
+        if (!msg.url) return reply(await statusFor(tabId));
+        const tab = await chrome.tabs.create({ url: msg.url });
+        if (msg.videoId)
+          await editGrant(tab.id, () => HubScope.withVideo(HubScope.emptyGrant(), msg.videoId));
+        return reply(await statusFor(tabId));
       }
 
       case 'setEnabled':

@@ -34,3 +34,23 @@
 .btn small{
   font:500 9px/1 inherit;letter-spacing:.14em;text-transform:uppercase;opacity:.7;
 }
+
+/* ── In the channel's own action row ─────────────────────────────────────────
+   Asked for: beside Subscribe and Join rather than floating over the page.
+   The host element is appended into that row, so it sits in the flow and the
+   row's own alignment carries it; the shadow root means YouTube's stylesheet
+   still cannot reach anything in here. When the row cannot be found the button
+   keeps its floating position, because a button you cannot find is no button. */
+:host(.inline){
+  display:inline-flex;align-items:center;
+  margin-left:8px;vertical-align:middle;
+}
+.btn.inline{
+  position:static;transform:none;
+  height:36px;padding:0 15px;border-radius:18px;
+  box-shadow:none;
+  animation:fade-in .22s cubic-bezier(.4,0,.2,1);
+}
+@keyframes fade-in{from{opacity:0}to{opacity:1}}
+.btn.inline:active{transform:translateY(1px)}
+.btn.inline small{display:none}

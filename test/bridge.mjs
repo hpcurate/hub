@@ -210,5 +210,42 @@ console.log('\ncoming across from localStorage');
   t.dom.window.close();
 }
 
+console.log('\nopening a channel in this tab instead');
+{
+  const t = await boot({ withChrome:true });
+  /* Through the settings pane, not through the store: the board holds its own
+     copy of the settings, and writing round it would be testing nothing. */
+  t.w.document.getElementById('btn-set').dispatchEvent(new t.w.MouseEvent('click', { bubbles:true }));
+  await wait(20);
+  const row = t.w.document.querySelector('#set-body [data-k="newTab"]');
+  ok('the setting is there in the extension', !!row);
+  row.dispatchEvent(new t.w.MouseEvent('click', { bubbles:true }));
+  t.w.document.querySelector('#sheet-set [data-close]')
+    .dispatchEvent(new t.w.MouseEvent('click', { bubbles:true }));
+  await wait(20);
+  clickCard(t.w);
+  await wait(40);
+  ok('no new tab is asked for', !t.sent.some(m => m.type === 'openInTab'), JSON.stringify(t.sent));
+  ok('this tab is unlocked instead', t.sent.some(m => m.type === 'unlock'));
+  ok('and taken in', t.navigated());
+  t.dom.window.close();
+}
+
+console.log('\nopening something out of the queue');
+{
+  const t = await boot({ withChrome:true });
+  t.w.eval("Store.enqueue({ videoId:'v1', url:'https://www.youtube.com/watch?v=v1', title:'A video' })");
+  t.w.document.getElementById('btn-q').dispatchEvent(new t.w.MouseEvent('click', { bubbles:true }));
+  await wait(40);
+  const row = t.w.document.querySelector('#q-list .q-open');
+  ok('the queue pane lists it', !!row);
+  row.dispatchEvent(new t.w.MouseEvent('click', { bubbles:true, cancelable:true }));
+  await wait(40);
+  const msg = t.sent.find(m => m.type === 'openVideo');
+  ok('opening it asks for a tab granted that one video', !!msg, JSON.stringify(t.sent));
+  ok('by video id, not by channel', msg && msg.videoId === 'v1');
+  t.dom.window.close();
+}
+
 console.log('\n' + pass + ' passed, ' + fails.length + ' failed');
 if (fails.length){ fails.forEach(f => console.log('  - ' + f)); process.exit(1) }

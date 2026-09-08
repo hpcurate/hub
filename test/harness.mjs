@@ -287,16 +287,20 @@ await tick();
 ok('the settings pane opens', !$('#sheet-set').hidden);
 ok('and it is its own pane', $('#sheet-ch').hidden && $('#sheet-cat').hidden);
 
+ok('the controls are built from the list', $$('#set-body .set-r').length > 10,
+   String($$('#set-body .set-r').length));
+ok('and grouped into sections', $$('#set-body .set-h').length >= 3);
+
 ok('click counts are off by default', $('#grid').classList.contains('no-counts'));
-click($('#sheet-set [data-ui="showCounts"]'));
+click($('#set-body [data-k="showCounts"]'));
 await tick();
 ok('the toggle turns them on', !$('#grid').classList.contains('no-counts'));
 ok('and it is remembered', JSON.parse(w.localStorage.getItem('hub.ui.v1')).showCounts === true);
 
-click($('#sheet-set [data-ui="showHeat"]'));
+click($('#set-body [data-k="showHeat"]'));
 await tick();
 ok('the heat line can be turned off', $('#grid').classList.contains('no-heat'));
-click($('#sheet-set [data-ui="showHeat"]'));
+click($('#set-body [data-k="showHeat"]'));
 await tick();
 
 set($('#s-heat-to'), '#ff0000');
@@ -310,11 +314,11 @@ const chipNames = () => [...$('#chips').children].map(c => c.textContent);
 const emptyCat = w.Store.cats().find(c => w.Store.countIn(c.id) === 0);
 ok('an empty category is in the bar to begin with',
    chipNames().some(t => t.startsWith(emptyCat.name)));
-click($('#sheet-set [data-ui="hideEmpty"]'));
+click($('#set-body [data-k="hideEmpty"]'));
 await tick();
 ok('hide empty keeps it out of the bar', !chipNames().some(t => t.startsWith(emptyCat.name)));
 ok('categories that hold something stay', chipNames().length > 1, chipNames().join());
-click($('#sheet-set [data-ui="hideEmpty"]'));
+click($('#set-body [data-k="hideEmpty"]'));
 await tick();
 click($('#sheet-set [data-close]'));
 await tick();
@@ -433,21 +437,21 @@ click($('#btn-set'));
 await tick();
 {
   const root = d.documentElement;
-  ok('the slider shows the current width', $('#s-width-v').textContent === '1560px',
-     $('#s-width-v').textContent);
-  set($('#s-width'), '1200');
+  const wOut = () => $('#set-body [data-k="maxWidth"] output').textContent;
+  ok('the slider shows the current width', wOut() === '1560px', wOut());
+  set($('#s-maxWidth'), '1200');
   await tick();
   ok('moving it narrows the board', root.style.getPropertyValue('--app-w') === '1200px');
-  ok('and the label follows', $('#s-width-v').textContent === '1200px');
+  ok('and the label follows', wOut() === '1200px');
   ok('it is remembered', JSON.parse(w.localStorage.getItem('hub.ui.v1')).maxWidth === 1200);
 
-  set($('#s-width'), '2600');
+  set($('#s-maxWidth'), '2600');
   await tick();
   ok('the top of the range is the whole window', root.style.getPropertyValue('--app-w') === 'none');
-  ok('and says so', $('#s-width-v').textContent === 'full width');
+  ok('and says so', wOut() === 'full width');
   ok('stored as 0, not as a number that is only nearly full',
      JSON.parse(w.localStorage.getItem('hub.ui.v1')).maxWidth === 0);
-  set($('#s-width'), '1560');
+  set($('#s-maxWidth'), '1560');
   await tick();
 }
 
@@ -456,8 +460,10 @@ console.log('\nexport and import');
   const before = w.Store.channels().length;
   const text = w.Store.exportJSON();
   const parsed = JSON.parse(text);
-  ok('an export is a hub export', parsed.kind === 'hub.export' && parsed.version === 1);
-  ok('and carries all three', Array.isArray(parsed.channels) && Array.isArray(parsed.cats) && !!parsed.ui);
+  ok('an export is a hub export', parsed.kind === 'hub.export' && parsed.version === 2,
+     String(parsed.version));
+  ok('and carries all four', Array.isArray(parsed.channels) && Array.isArray(parsed.cats)
+     && !!parsed.ui && Array.isArray(parsed.queue));
   ok('with everything on the board', parsed.channels.length === before);
 
   w.Store.removeChannel(w.Store.channels()[0].id);
@@ -476,6 +482,109 @@ console.log('\nexport and import');
 }
 click($('#sheet-set [data-close]'));
 await tick();
+
+console.log('\n avatars and what is new');
+{
+  const ch = w.Store.channels()[0];
+  w.Store.enrich(ch.id, { ytId:'UC9', avatar:'https://yt3.example/a.jpg',
+                          latest:{ videoId:'v1', title:'A new one', at:Date.now() } });
+  /* Store.enrich is the extension writing through, not a click, so nothing has
+     asked the board to redraw yet. Touching the search box is the cheapest
+     honest way to ask for one. */
+  set($('#q'), '');
+  await tick();
+  const card = $$('#grid .card').find(el => el.dataset.id === ch.id);
+  ok('the avatar lands on the card', card.querySelector('.av').classList.contains('has'));
+  ok('with the url it was given',
+     card.querySelector('.av img').getAttribute('src') === 'https://yt3.example/a.jpg');
+  ok('a channel posted since you looked reads as new', card.classList.contains('is-new'));
+  ok('and the dot says what it is', card.querySelector('.new').title === 'A new one');
+
+  w.Store.touch(ch.id);
+  set($('#q'), '');
+  await tick();
+  ok('opening it clears the new mark',
+     !$$('#grid .card').find(el => el.dataset.id === ch.id).classList.contains('is-new'));
+
+  const other = w.Store.channels().find(c => c.id !== ch.id);
+  ok('a channel with nothing fetched is not new', w.Store.isNew(other) === false);
+}
+click($('#btn-set'));
+await tick();
+click($('#set-body [data-k="showAvatars"]'));
+await tick();
+ok('avatars can be turned off', $('#grid').classList.contains('no-avatar'));
+click($('#set-body [data-k="showAvatars"]'));
+await tick();
+click($('#set-body [data-k="showNew"]'));
+await tick();
+ok('so can the new dot', $('#grid').classList.contains('no-new'));
+click($('#set-body [data-k="showNew"]'));
+await tick();
+
+ok('the accent is a real token', !!$('#set-body [data-k="accent"] input[type="color"]'));
+set($('#s-accent'), '#00ff00');
+await tick();
+ok('changing it moves the whole system', d.documentElement.style.getPropertyValue('--y') === '#00ff00');
+set($('#s-radius'), '10');
+await tick();
+ok('so does the corner radius', d.documentElement.style.getPropertyValue('--r-base') === '10px');
+set($('#s-descLines'), '2');
+await tick();
+ok('and the description clamp', d.documentElement.style.getPropertyValue('--desc-lines') === '2');
+click($('#set-body [data-k="avatarShape"] .seg-b[data-v="square"]'));
+await tick();
+ok('the avatar shape is a choice', $('#grid').dataset.avatar === 'square');
+click($('#sheet-set [data-close]'));
+await tick();
+
+console.log('\n enter opens the first result');
+{
+  const names = $$('#grid .card .card-name').map(e => e.textContent);
+  set($('#q'), names[0].slice(0, 4));
+  await tick();
+  const first = $('#grid .card');
+  let opened = 0;
+  first.querySelector('.card-hit').addEventListener('click', () => { opened++ });
+  $('#q').dispatchEvent(new w.KeyboardEvent('keydown', { key:'Enter', bubbles:true, cancelable:true }));
+  await tick();
+  ok('enter opens the top card', opened === 1);
+  set($('#q'), '');
+  await tick();
+}
+
+console.log('\n the queue');
+{
+  ok('the queue starts empty', w.Store.queue().length === 0);
+  w.Store.enqueue({ videoId:'v1', url:'https://www.youtube.com/watch?v=v1',
+                    title:'Something to watch', channel:'@keep' });
+  w.Store.enqueue({ videoId:'v2', url:'https://www.youtube.com/watch?v=v2', title:'Another' });
+  ok('two go in', w.Store.queue().length === 2);
+  ok('the same video twice does not',
+     w.Store.enqueue({ videoId:'v1', url:'x', title:'dupe' }) === null && w.Store.queue().length === 2);
+  ok('newest is first', w.Store.queue()[0].videoId === 'v2');
+  set($('#q'), '');
+  await tick();
+  ok('the bar shows the count', $('#q-n').textContent === '2', $('#q-n').textContent);
+
+  click($('#btn-q'));
+  await tick();
+  ok('the queue pane opens', !$('#sheet-q').hidden);
+  ok('with a row each', $$('#q-list .q-r').length === 2);
+  ok('and the title on it', $$('#q-list .q-t')[0].textContent === 'Another');
+
+  click($$('#q-list .cat-x')[0]);
+  await tick();
+  ok('a row can be dropped', w.Store.queue().length === 1);
+  click($('#q-clear'));
+  ok('clear takes two clicks', w.Store.queue().length === 1);
+  click($('#q-clear'));
+  await tick();
+  ok('and then empties it', w.Store.queue().length === 0);
+  ok('the pane says so', !!$('#q-list .q-empty'));
+  click($('#sheet-q [data-close]'));
+  await tick();
+}
 
 console.log('\nkeys');
 d.dispatchEvent(new w.KeyboardEvent('keydown', { key:'n', bubbles:true }));

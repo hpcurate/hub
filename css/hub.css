@@ -556,3 +556,85 @@ input[type="range"]::-moz-range-thumb{
 .data-acts{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .data-said{
   font:500 10px/1.4 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--gr)}
+
+/* ── Avatars ─────────────────────────────────────────────────────────────────
+   The fastest way to find a channel on a board of forty, and the one thing the
+   board could not say about a channel until it could ask YouTube. The slot
+   holds its space only when there is something in it — an empty ring beside
+   every name would be worse than no avatars at all. */
+.card .av{display:none;flex:0 0 auto;width:30px;height:30px;margin:-1px 0 0}
+.card .av.has{display:block}
+.grid.no-avatar .card .av{display:none}
+.card .av img{
+  width:100%;height:100%;object-fit:cover;display:block;
+  background:var(--s2);border:var(--bw) solid var(--bd);
+  border-radius:var(--r-pill);
+}
+.grid[data-avatar="square"] .card .av img{border-radius:var(--r1)}
+
+/* Something new since you last looked. A dot, not a badge: it is a yes/no. */
+.card .new{display:none;flex:0 0 auto;width:7px;height:7px;margin-top:5px;
+           border-radius:var(--r-pill);background:var(--y)}
+.card.is-new .new{display:block}
+.grid.no-new .card .new{display:none}
+.card.is-new{border-color:color-mix(in srgb,var(--y) 26%,var(--bd))}
+
+.card-desc{-webkit-line-clamp:var(--desc-lines,4)}
+.grid.no-desc .card .card-desc{display:none}
+.grid.no-tag .card .tag{display:none}
+.grid.no-seen .card .seen{display:none}
+
+/* ── Settings, built from a list ─────────────────────────────────────────── */
+.sheet.wide{width:min(620px,calc(100vw - 40px))}
+.set-body{display:flex;flex-direction:column;gap:6px}
+.set-h{
+  margin:14px 0 2px;
+  font:500 10px/1 var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--y);
+}
+.set-h:first-child{margin-top:0}
+.set-r{
+  display:flex;align-items:center;gap:12px;padding:9px 11px;
+  background:var(--bg);border:var(--bw) solid var(--bd);border-radius:var(--r1);
+  transition:border-color var(--dur-1) var(--ease);
+}
+.set-r:hover{border-color:var(--bd-2)}
+.set-l{flex:1;min-width:0}
+.set-t{font:400 12.5px/1.4 var(--mono);color:var(--tx)}
+.set-l em{display:block;font-style:normal;font-size:11px;line-height:1.45;color:var(--tx-2);margin-top:2px}
+.set-r.as-button{cursor:pointer}
+.set-r b{
+  flex:0 0 auto;position:relative;width:30px;height:17px;border-radius:var(--r-pill);
+  background:var(--s2);border:var(--bw) solid var(--bd-2);
+  transition:background var(--dur-1) var(--ease),border-color var(--dur-1) var(--ease);
+}
+.set-r b::after{
+  content:'';position:absolute;top:2px;left:2px;width:11px;height:11px;
+  border-radius:var(--r-pill);background:var(--mu);
+  transition:transform var(--dur-1) var(--ease-out),background var(--dur-1) var(--ease);
+}
+.set-r.on b{background:var(--yd);border-color:var(--y)}
+.set-r.on b::after{background:var(--y);transform:translateX(13px)}
+.set-range{display:flex;align-items:center;gap:10px;flex:0 0 210px}
+.set-range output{
+  flex:0 0 auto;min-width:66px;text-align:right;
+  font:500 11px/1 var(--mono);letter-spacing:.06em;color:var(--tx)}
+.set-heat .heat-pick{flex:0 0 220px}
+.seg-b.wide{width:auto;padding:0 12px;height:30px}
+
+/* ── Queue ───────────────────────────────────────────────────────────────── */
+.btn-n{
+  margin-left:2px;padding:1px 5px;border-radius:var(--r-pill);
+  background:var(--s2);color:var(--tx-2);font-size:10px;line-height:1.4}
+.btn.has .btn-n{background:var(--y);color:var(--on-y);font-weight:700}
+.q-list{display:flex;flex-direction:column;gap:5px;max-height:52vh;overflow:auto}
+.q-r{
+  display:flex;align-items:center;gap:8px;padding:8px 9px;
+  background:var(--bg);border:var(--bw) solid var(--bd);border-radius:var(--r1);
+  transition:border-color var(--dur-1) var(--ease);
+}
+.q-r:hover{border-color:var(--bd-2)}
+.q-open{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;
+        color:var(--tx);text-decoration:none}
+.q-t{font-size:12.5px;line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.q-c{font:500 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--tx-2)}
+.q-empty{margin:0;padding:22px 4px;font-size:12.5px;color:var(--tx-2);text-align:center}

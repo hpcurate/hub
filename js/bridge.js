@@ -34,7 +34,7 @@ const HubBridge = (() => {
        a blocked tab   — this tab, granted, straight to the channel
 
      Returns true when it has taken responsibility for the navigation. */
-  async function open(ch){
+  async function open(ch, opts){
     if (!inExt) return false;
     const scope = HubScope.parse(ch.url);
     if (!scope) return false;                 /* not a channel url — let it through */
@@ -43,6 +43,16 @@ const HubBridge = (() => {
       const ok = await ask({ type:'unlock', scope, url:ch.url });
       /* Without the grant the guard would only send the tab straight back here.
          Doing nothing visible beats a loop. */
+      if (!ok) return true;
+      location.href = ch.url;
+      return true;
+    }
+
+    /* A new tab by default, because the board is a place you come back to.
+       Turned off, the board's own tab goes in, which is what you want when the
+       board is your home page rather than a window you keep open. */
+    if (opts && opts.newTab === false){
+      const ok = await ask({ type:'unlock', scope, url:ch.url });
       if (!ok) return true;
       location.href = ch.url;
       return true;

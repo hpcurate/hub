@@ -9,7 +9,7 @@
 */
 const HubModel = (() => {
 
-  const KEYS = { CH:'hub.channels.v1', CAT:'hub.cats.v1', UI:'hub.ui.v1' };
+  const KEYS = { CH:'hub.channels.v1', CAT:'hub.cats.v1', UI:'hub.ui.v1', Q:'hub.queue.v1' };
 
   /* Ten hues at roughly one lightness, so no category shouts louder than
      another on a dark ground. Since v0.3.0 they are a starting point rather
@@ -32,6 +32,21 @@ const HubModel = (() => {
     heatFrom:'#3a3a3a', heatTo:'#A78BFA',
     showHeat:true, showCounts:false, hideEmpty:false,
     addMode:false,
+
+    /* Look. Each of these is a token the whole sheet already draws with, so a
+       dial here moves the system rather than one rule. */
+    accent:'#A78BFA', radius:4, motion:1,
+
+    /* What a card shows. Off is a real answer for every one of them. */
+    showAvatars:true, avatarShape:'circle', showDesc:true, descLines:4,
+    showTag:true, showSeen:true, showNew:true,
+
+    /* Board behaviour. */
+    enterOpens:true, newTab:true,
+
+    /* The extension. checkEvery is in hours; a feed that is polled harder than
+       this tells you nothing more, because uploads are not that frequent. */
+    queueButton:true, checkNew:true, checkEvery:6,
     /* 0 is "as wide as the window". Anything else is a pixel measure, which is
        what an ultrawide needs: the board reflows to any width, but a board four
        thousand pixels across is a wall, not a page. */
@@ -111,7 +126,13 @@ const HubModel = (() => {
   /* Records written before v0.3.0 have no click count and no category order.
      Filling them in on read rather than migrating on write means an old board
      opened in a new build is simply correct, with nothing to run first. */
-  const fillChannel = c => ({ clicks:0, seen:null, desc:'', cat:'', ...c });
+  const fillChannel = c => ({
+    clicks:0, seen:null, desc:'', cat:'',
+    /* Filled in later by the extension, from the channel's own page and feed.
+       Empty is not an error, it is "not looked up yet". */
+    ytId:'', avatar:'', latest:null, checkedAt:0,
+    ...c,
+  });
   const fillCat = (c, i) => ({ order:i, icon:'', ...c });
 
   const seedCats = () => DEFAULT_CATS.map((c, i) => ({ id:uid(), order:i, ...c }));
@@ -122,9 +143,21 @@ const HubModel = (() => {
      fields is not the same as a file this wrote. */
   const EXPORT_KIND = 'hub.export';
 
-  const buildExport = (channels, cats, ui) => ({
-    kind: EXPORT_KIND, version: 1, at: new Date().toISOString(),
-    channels, cats, ui,
+  const buildExport = (channels, cats, ui, queue) => ({
+    kind: EXPORT_KIND, version: 2, at: new Date().toISOString(),
+    channels, cats, ui, queue: queue || [],
+  });
+
+  /* A queued video. It carries its own title and channel, because the queue has
+     to be readable without going back to YouTube to ask what any of it was. */
+  const makeQueued = ({ videoId, url, title, channel, channelUrl }) => ({
+    id: uid(),
+    videoId: String(videoId || ''),
+    url: normUrl(url) || ('https://www.youtube.com/watch?v=' + videoId),
+    title: String(title || '').trim() || 'untitled',
+    channel: String(channel || '').trim(),
+    channelUrl: normUrl(channelUrl),
+    added: Date.now(),
   });
 
   /* Returns { channels, cats, ui } or null. Deliberately forgiving about what
@@ -139,11 +172,12 @@ const HubModel = (() => {
       channels: d.channels.map(fillChannel),
       cats: d.cats.map(fillCat).sort((a, b) => a.order - b.order),
       ui: { ...DEFAULT_UI, ...(d.ui && typeof d.ui === 'object' ? d.ui : {}) },
+      queue: Array.isArray(d.queue) ? d.queue : [],
     };
   }
 
   return { KEYS, PALETTE, DEFAULT_CATS, DEFAULT_UI, ICONS, ICON_KEYS, uid,
-           normUrl, nameFromUrl, makeChannel, fillChannel, fillCat, seedCats,
+           normUrl, nameFromUrl, makeChannel, makeQueued, fillChannel, fillCat, seedCats,
            EXPORT_KIND, buildExport, readExport };
 })();
 

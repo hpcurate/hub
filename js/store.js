@@ -14,7 +14,7 @@
 const Store = (() => {
 
   const { KEYS, PALETTE, DEFAULT_UI, uid,
-          normUrl, nameFromUrl, makeChannel, fillChannel, fillCat, seedCats,
+          normUrl, nameFromUrl, makeChannel, makeQueued, fillChannel, fillCat, seedCats,
           buildExport, readExport } = HubModel;
 
   /* chrome.storage.local, or nothing. `chrome` exists in places that cannot
@@ -24,7 +24,7 @@ const Store = (() => {
     catch { return null }
   })();
 
-  let channels = [], cats = [], ui = { ...DEFAULT_UI };
+  let channels = [], cats = [], ui = { ...DEFAULT_UI }, queue = [];
   let migrated = false;                             /* carried over from localStorage */
   const listeners = new Set();
 
@@ -44,7 +44,9 @@ const Store = (() => {
     const rawCat = parse(bag[KEYS.CAT], null);
     const rawUi  = parse(bag[KEYS.UI],  null);
 
+    const rawQ = parse(bag[KEYS.Q], null);
     channels = Array.isArray(rawCh) ? rawCh.map(fillChannel) : [];
+    queue = Array.isArray(rawQ) ? rawQ : [];
     cats = Array.isArray(rawCat) && rawCat.length
       ? rawCat.map(fillCat).sort((a, b) => a.order - b.order)
       : null;
@@ -71,6 +73,7 @@ const Store = (() => {
   }
 
   const saveCh  = () => save(KEYS.CH, channels);
+  const saveQ   = () => save(KEYS.Q, queue);
   const saveCat = () => { cats.forEach((c, i) => { c.order = i }); save(KEYS.CAT, cats) };
   const saveUi  = () => save(KEYS.UI, ui);
 
@@ -131,7 +134,7 @@ const Store = (() => {
     /* ── Export / import ───────────────────────────────────────────────────
        The other half of "remember my data when it updates": whatever the
        storage does underneath, a file you hold is a copy nothing can take. */
-    exportJSON: () => JSON.stringify(buildExport(channels, cats, ui), null, 2),
+    exportJSON: () => JSON.stringify(buildExport(channels, cats, ui, queue), null, 2),
 
     importJSON(text){
       const d = readExport(text);
@@ -139,8 +142,9 @@ const Store = (() => {
       channels = d.channels;
       cats = d.cats.length ? d.cats : seedCats();
       ui = d.ui;
-      saveCh(); saveCat(); saveUi();
-      return { channels:channels.length, cats:cats.length };
+      queue = d.queue;
+      saveCh(); saveCat(); saveUi(); saveQ();
+      return { channels:channels.length, cats:cats.length, queue:queue.length };
     },
 
     /* ── Reads ─────────────────────────────────────────────────────────── */
@@ -173,6 +177,44 @@ const Store = (() => {
     },
 
     removeChannel(id){ channels = channels.filter(c => c.id !== id); saveCh() },
+
+    /* ── What the extension looked up ──────────────────────────────────────
+       The id, the avatar and the newest upload all come from YouTube rather
+       than from Hugo, so they are written by their own door — nothing here
+       touches a field a person typed. */
+    enrich(id, info){
+      const ch = channels.find(c => c.id === id);
+      if (!ch) return null;
+      if (info.ytId)   ch.ytId = info.ytId;
+      if (info.avatar) ch.avatar = info.avatar;
+      if (info.latest) ch.latest = info.latest;
+      if (info.checkedAt) ch.checkedAt = info.checkedAt;
+      saveCh();
+      return ch;
+    },
+
+    /* A channel has something new when its newest upload is newer than the last
+       time you opened it. No second piece of state: "new" is a comparison
+       between two facts already on the record. */
+    isNew(ch){
+      if (!ui.showNew || !ch || !ch.latest || !ch.latest.at) return false;
+      return ch.latest.at > (ch.seen || 0);
+    },
+
+    /* ── The queue ─────────────────────────────────────────────────────────
+       Watch Later lives behind the feed, and the feed is what the guard takes
+       away. This is the replacement, and it is HUB's, not YouTube's. */
+    queue: () => queue.slice(),
+
+    enqueue(data){
+      const q = makeQueued(data);
+      if (q.videoId && queue.some(x => x.videoId === q.videoId)) return null;
+      queue.unshift(q); saveQ();
+      return q;
+    },
+
+    dequeue(id){ queue = queue.filter(q => q.id !== id); saveQ() },
+    clearQueue(){ queue = []; saveQ() },
 
     /* One click is two facts: when it last happened, and how often it has.
        The first orders "last viewed", the second is the heat. */

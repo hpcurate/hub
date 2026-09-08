@@ -227,5 +227,92 @@ const adding = () => ({ enabled:true, guarding:false, addMode:true, snoozeUntil:
   t.dom.window.close();
 }
 
+console.log('\nwhere the add button goes');
+{
+  const t = boot({ url:'https://www.youtube.com/@anyone',
+                   body:'<yt-flexible-actions-view-model><button>Subscribe</button></yt-flexible-actions-view-model>',
+                   answer: adding });
+  await wait(60);
+  const host = t.addBtn();
+  ok('it finds the channel page action row',
+     !!host && host.parentElement.tagName.toLowerCase() === 'yt-flexible-actions-view-model',
+     host && host.parentElement.tagName);
+  ok('and says it is inline', host.classList.contains('inline'));
+  t.dom.window.close();
+}
+{
+  const t = boot({ url:'https://www.youtube.com/@anyone', answer: adding });
+  await wait(60);
+  const host = t.addBtn();
+  ok('with no row to find it still appears', !!host);
+  ok('floating, rather than not at all', !host.classList.contains('inline'));
+  t.dom.window.close();
+}
+
+console.log('\nadding every channel on the subscriptions page');
+{
+  const t = boot({ url:'https://www.youtube.com/feed/channels',
+                   body:'<a href="/@one">One</a><a href="/@two">Two</a>' +
+                        '<a href="/@one">One again</a><a href="/watch?v=x">a video</a>' +
+                        '<a href="/feed/history">history</a>',
+                   answer: adding });
+  await wait(60);
+  ok('the subscriptions page gets a button', !!t.addBtn());
+
+  t.addBtn().shadowRoot.querySelector('button')
+    .dispatchEvent(new t.w.MouseEvent('click', { bubbles:true }));
+  await wait(40);
+  const msg = t.sent.find(m => m.type === 'addMany');
+  ok('clicking it sends every channel at once', !!msg, JSON.stringify(t.sent));
+  ok('the same channel twice is sent once', msg && msg.items.length === 2,
+     JSON.stringify(msg && msg.items));
+  ok('videos and feeds are not channels',
+     msg && msg.items.every(i => i.url.includes('/@')));
+  ok('and each carries a name', msg && msg.items[0].name === 'One', JSON.stringify(msg.items[0]));
+  t.dom.window.close();
+}
+{
+  const t = boot({ url:'https://www.youtube.com/feed/channels', answer: guarded() });
+  await wait(30);
+  ok('with the guard on, that page is sent to the board instead', t.redirected());
+  ok('and grows no button', !t.addBtn());
+  t.dom.window.close();
+}
+
+console.log('\nputting a video aside');
+{
+  const t = boot({ url:'https://www.youtube.com/watch?v=vid1',
+                   head:'<meta itemprop="channelId" content="UC9">' +
+                        '<meta property="og:title" content="A good video">',
+                   answer: guarded({ handles:['@keep'], ids:['UC9'], names:[], videos:[] }) });
+  await wait(60);
+  ok('a video you are allowed to watch gets a queue button', !!t.addBtn());
+
+  t.addBtn().shadowRoot.querySelector('button')
+    .dispatchEvent(new t.w.MouseEvent('click', { bubbles:true }));
+  await wait(40);
+  const msg = t.sent.find(m => m.type === 'enqueue');
+  ok('clicking it queues the video', !!msg, JSON.stringify(t.sent));
+  ok('with its id', msg && msg.videoId === 'vid1');
+  ok('its title', msg && msg.title === 'A good video', msg && msg.title);
+  ok('and whose channel it is', msg && msg.channelUrl.includes('UC9'), msg && msg.channelUrl);
+  t.dom.window.close();
+}
+{
+  const t = boot({ url:'https://www.youtube.com/watch?v=vid1',
+                   head:'<meta itemprop="channelId" content="UC9">',
+                   answer: () => ({ enabled:true, guarding:false, addMode:false,
+                                    queueButton:false, snoozeUntil:0, grant:null }) });
+  await wait(60);
+  ok('turned off in settings, there is no queue button', !t.addBtn());
+  t.dom.window.close();
+}
+{
+  const t = boot({ url:'https://www.youtube.com/@keep', answer: guarded() });
+  await wait(60);
+  ok('a channel page gets no queue button', !t.addBtn());
+  t.dom.window.close();
+}
+
 console.log('\n' + pass + ' passed, ' + fails.length + ' failed');
 if (fails.length){ fails.forEach(f => console.log('  - ' + f)); process.exit(1) }

@@ -16,6 +16,12 @@ motion tokens, Grotesk for titles and JetBrains Mono for everything else.
   Empty ones can be kept out of the filter bar.
 - **Quick categorise** — click the category tag on any card and pick from a
   menu. No pane, no form; it is how a channel added from YouTube gets filed.
+- **Avatars and what is new** — in the extension, the board reads each channel's
+  own page for its picture and its feed for its newest upload, and marks a card
+  when that channel has posted since you last opened it.
+- **A queue** — Watch Later lives behind the feed, which the guard removes. The
+  **+ queue** button on any video page puts one aside here instead. Opening it
+  unlocks that video, not its whole channel.
 - **Colour coding** — a category's colour is its spine down the left of every
   card, its dot on the filter chip, and a faint wash across the tile.
 - **Sort** — last viewed, longest unwatched, recently added, name, category,
@@ -35,7 +41,12 @@ motion tokens, Grotesk for titles and JetBrains Mono for everything else.
 - **Export / import** — one JSON file with every channel, category and setting.
   Import replaces the board.
 
-Keys: `/` search · `n` new channel · `Esc` close.
+- **Settings for most of it** — accent, corner radius, motion, content width,
+  and a switch for every part of a card: avatar (round or square), the new dot,
+  description and how many lines of it, category tag, last viewed, click count,
+  heat line.
+
+Keys: `/` search · `Enter` opens the first result · `n` new channel · `Esc` close.
 
 ## The extension
 
@@ -54,8 +65,10 @@ feed, search and every other channel send it back to the board. A tab is granted
 its channel on its own, so opening YouTube in a new tab always starts here.
 
 **Add mode** (settings, or the popup) stands the guard down and puts a **+ add**
-button on every channel page, so a channel you have just found goes onto the
-board without typing its URL.
+button in every channel page's own action row, beside Subscribe — so a channel
+you have just found goes onto the board without typing its URL. On your
+subscriptions page the button adds **every channel listed, in one pass**, which
+is how to seed a board without visiting forty pages.
 
 **Getting out**, four ways, all always available:
 
@@ -72,8 +85,10 @@ video whose owner cannot be read, the extension being reloaded under a live page
 you cannot leave is a worse failure than a video that slipped through, so every
 uncertainty resolves the same way.
 
-**Permissions:** `storage`, and YouTube. Nothing else — no `tabs`, so it cannot
-see the address of any other page you have open. Settings live in
+**Permissions:** `storage`, and YouTube — the latter now as a host permission
+too, so the board can read a channel's own page for its avatar and its feed
+(`/feeds/videos.xml`, public, no key) for its newest upload. Nothing else — no
+`tabs`, so it cannot see the address of any other page you have open. Settings live in
 `chrome.storage.local`; which channel a tab is on lives in
 `chrome.storage.session` and is gone when the browser closes.
 
@@ -91,7 +106,7 @@ That file is also the backup — a copy you hold is the only one nothing can tak
 
 ## Where it keeps things
 
-Three keys — `hub.channels.v1`, `hub.cats.v1`, `hub.ui.v1` — in `localStorage`
+Four keys — `hub.channels.v1`, `hub.cats.v1`, `hub.ui.v1`, `hub.queue.v1` — in `localStorage`
 off disk, and in `chrome.storage.local` inside the extension. The extension has
 to use the second: the **+ add** button writes from a YouTube page through the
 service worker, which has no `localStorage` at all. Either way it is per
@@ -110,6 +125,7 @@ Four files, run in order:
 | `harness.mjs` | the board — boots the real `index.html` and drives it through DOM events |
 | `scope.mjs` | the rules for what counts as "inside the channel I picked", on their own |
 | `guard.mjs` | the content script in a fake YouTube page: what is blocked, and every way out |
+| `yt.mjs` | the parsers for YouTube's own markup — the channel page and the feed |
 | `bridge.mjs` | the board off disk, as the extension's page, and as a tab the guard sent to it |
 
 Same approach as `root/test`. They check behaviour, not looks: jsdom does not
