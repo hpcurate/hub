@@ -141,7 +141,12 @@
 
 </section>
 
+<!-- The channel-scope rules and the extension bridge. Both are inert when the
+     page is opened off disk: HubScope is pure functions, and HubBridge answers
+     "no" to everything when there is no extension around it. -->
+<script src="ext/scope.js"></script>
 <script src="js/store.js"></script>
+<script src="js/bridge.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

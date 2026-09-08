@@ -99,10 +99,18 @@ function build(ch){
     '<div class="card-foot"><span class="tag"></span><span class="seen"></span></div>';
 
   /* The stamp is written on the way out, on the same click that opens the tab,
-     so "last viewed" means "last time I actually went there". */
-  el.querySelector('.card-hit').addEventListener('click', () => {
+     so "last viewed" means "last time I actually went there".
+
+     Inside the extension the bridge takes the navigation instead, so the tab it
+     opens is granted before it loads and the guard never sees an unpicked one.
+     Off disk the bridge declines and the anchor behaves like an anchor. */
+  el.querySelector('.card-hit').addEventListener('click', e => {
     Store.touch(ch.id);
     paintSeen(el, Store.channels().find(c => c.id === ch.id));
+    if (typeof HubBridge !== 'undefined' && HubBridge.inExt){
+      e.preventDefault();
+      HubBridge.open(ch);
+    }
   });
   el.querySelector('.card-edit').addEventListener('click', e => {
     e.preventDefault(); e.stopPropagation();

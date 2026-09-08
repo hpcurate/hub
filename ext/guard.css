@@ -1,0 +1,26 @@
+/* ── The veil ─────────────────────────────────────────────────────────────────
+   Document-level, and only this. It is applied at document_start — before
+   YouTube has painted anything — so an allowed page is unveiled again long
+   before its first frame and never flickers. A blocked one was never seen.
+
+   <body> is what blurs, not <html>: the overlay is a sibling of body, so it
+   stays sharp above a blurred page instead of blurring with it.
+
+   Everything here keys off one class. If the content script dies, throws, or
+   never hears back from the extension, the class comes off and YouTube is
+   untouched — there is no state that can leave a page stuck behind this. */
+
+html.hub-veil > body{
+  filter:blur(18px) saturate(.55) brightness(.55) !important;
+  pointer-events:none !important;
+  user-select:none !important;
+}
+html.hub-veil{ overflow:hidden !important }
+
+/* Coming *off* is worth animating — it is the moment a channel is unlocked and
+   the page arrives. Going on is instant, because it is a block, not a
+   transition, and a slow blur would show the feed on the way down. */
+html.hub-unveiling > body{
+  transition:filter .34s cubic-bezier(.4,0,.2,1) !important;
+  filter:none !important;
+}

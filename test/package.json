@@ -3,6 +3,8 @@
   "private": true,
   "description": "jsdom harness for HUB — not part of the site. cd test && npm install && node harness.mjs",
   "type": "module",
-  "scripts": { "test": "node harness.mjs" },
+  "scripts": {
+    "test": "node harness.mjs && node scope.mjs && node guard.mjs && node picker.mjs"
+  },
   "devDependencies": { "jsdom": "^24.1.0" }
 }
