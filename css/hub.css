@@ -622,27 +622,104 @@ input[type="range"]::-moz-range-thumb{
 .data-said{
   font:500 10px/1.4 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--gr)}
 
-/* ── Avatars ─────────────────────────────────────────────────────────────────
+/* ── The avatar ──────────────────────────────────────────────────────────────
    The fastest way to find a channel on a board of forty, and the one thing the
-   board could not say about a channel until it could ask YouTube. The slot
-   holds its space only when there is something in it — an empty ring beside
-   every name would be worse than no avatars at all. */
-.card .av{display:none;flex:0 0 auto;width:30px;height:30px;margin:-1px 0 0}
-.card .av.has{display:block}
-.grid.no-avatar .card .av{display:none}
-/* ── The avatar ───────────────────────────────────────────────────────────── */
-.card .av img{
-  width:100%;height:100%;object-fit:cover;display:block;
+   board could not say about a channel until it could ask YouTube.
+
+   The shape, the edge and the treatment are all on the box rather than on the
+   picture, because the picture is not always there: a board opened off disk has
+   no avatars at all — a file:// page cannot fetch youtube.com and never will —
+   and the stand-in has to be the same shape, the same size and the same edge as
+   the thing it stands in for, or the board is two boards. */
+.card .av{
+  position:relative;flex:0 0 auto;margin:-1px 0 0;
+  width:var(--av-size,30px);height:var(--av-size,30px);
+  overflow:hidden;
   background:var(--s2);border:var(--bw) solid var(--bd);
   border-radius:var(--r-pill);
 }
-.grid[data-avatar="rounded"] .card .av img{border-radius:calc(var(--r-base) * 1.75)}
-.grid[data-avatar="square"] .card .av img{border-radius:0}
-.grid[data-avatar-border="none"] .card .av img{border-color:transparent}
-.grid[data-avatar-border="accent"] .card .av img{
+.grid.no-avatar .card .av{display:none}
+.card .av img{width:100%;height:100%;object-fit:cover;display:block}
+.card .av:not(.has) img{display:none}
+.card .av.has .av-fb{display:none}
+
+/* ── What stands in for a picture ────────────────────────────────────────────
+   An initial, the category's icon, or a silhouette — in the category's own
+   colour, so a board with no pictures at all still reads as a coloured board
+   rather than a grid of empty rings. */
+.av-fb{
+  position:absolute;inset:0;
+  display:flex;align-items:center;justify-content:center;
+  background:color-mix(in srgb,var(--c) 15%,var(--s2));
+  color:var(--c);
+  font:700 calc(var(--av-size,30px) * .44)/1 var(--head);letter-spacing:-.02em;
+  text-transform:uppercase;
+  user-select:none;
+}
+.av-fb .ico{width:54%;height:54%;stroke-width:1.8}
+.av[data-fb="ghost"] .av-fb{color:color-mix(in srgb,var(--c) 62%,var(--mu))}
+
+/* ── Shape ───────────────────────────────────────────────────────────────────
+   Five. The hexagon is a clip and not a radius, so it takes no border — a
+   border follows the box, not the clip, and half of one is worse than none. */
+.grid[data-avatar="rounded"]  .card .av{border-radius:calc(var(--r-base) * 1.75)}
+.grid[data-avatar="squircle"] .card .av{border-radius:32%}
+.grid[data-avatar="square"]   .card .av{border-radius:0}
+.grid[data-avatar="hex"] .card .av{
+  border-radius:0;border-color:transparent;
+  clip-path:polygon(50% 0%, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%);
+}
+
+/* ── Edge ────────────────────────────────────────────────────────────────── */
+.grid[data-avatar-border="none"] .card .av{border-color:transparent}
+.grid[data-avatar-border="accent"] .card .av{
   border-color:var(--c);
   box-shadow:0 0 0 1px color-mix(in srgb,var(--c) 30%,transparent);
 }
+/* A ring stands off the picture instead of sitting on it: the card's own ground
+   between the two, which is what makes it read as a ring and not a thick edge. */
+.grid[data-avatar-border="ring"] .card .av{
+  border:2px solid var(--c);
+  box-shadow:inset 0 0 0 2px var(--s1);
+}
+.grid[data-surface="flat"][data-avatar-border="ring"] .card .av{
+  box-shadow:inset 0 0 0 2px var(--bg);
+}
+
+/* ── Fit and colour ────────────────────────────────────────────────────────
+   `contain` fits the whole picture in and lets the box show around it, which is
+   what a wordmark avatar wants and what a face does not. `hover` is the one to
+   pick on a board of forty: grey until you point at it, so the colour on screen
+   is the categories' and not forty thumbnails'. */
+.grid[data-avatar-fit="contain"] .card .av img{object-fit:contain}
+.grid[data-avatar-tone="mono"] .card .av img{filter:grayscale(1)}
+.grid[data-avatar-tone="hover"] .card .av img{
+  filter:grayscale(1) opacity(.82);
+  transition:filter var(--dur-2) var(--ease);
+}
+.grid[data-avatar-tone="hover"] .card:hover .av img{filter:none}
+/* Tint: the picture's own light, the category's own hue. */
+.grid[data-avatar-tone="tint"] .card .av img{filter:grayscale(1) contrast(1.06)}
+.grid[data-avatar-tone="tint"] .card .av.has::after{
+  content:'';position:absolute;inset:0;pointer-events:none;
+  background:var(--c);mix-blend-mode:color;opacity:.85;
+}
+
+/* ── The picture, behind the card ────────────────────────────────────────────
+   The same avatar again, huge and faint, as the card's ground. Masked on the
+   diagonal so it is strongest in the corner the picture already sits in and
+   gone by the time it reaches the text — a wash you have to read over is not a
+   wash, it is a problem. Opacity is the setting, and 0 is off. */
+.card .wash{
+  position:absolute;inset:0;z-index:-2;pointer-events:none;
+  background-position:center;background-size:cover;background-repeat:no-repeat;
+  opacity:var(--wash,0);
+  filter:saturate(.85) blur(1px);
+  -webkit-mask-image:linear-gradient(150deg,#000 0%,rgba(0,0,0,.35) 55%,transparent 88%);
+  mask-image:linear-gradient(150deg,#000 0%,rgba(0,0,0,.35) 55%,transparent 88%);
+  transition:opacity var(--dur-2) var(--ease);
+}
+.card:hover .wash{opacity:calc(var(--wash,0) * 1.35)}
 
 /* ── The new dot ─────────────────────────────────────────────────────────────
    Something new since you last looked. A dot, not a badge: it is a yes/no. It
@@ -662,7 +739,9 @@ input[type="range"]::-moz-range-thumb{
   transform:scale(1.5);
   box-shadow:0 0 0 3px color-mix(in srgb,var(--dot-c,var(--y)) 24%,transparent);
 }
-.grid[data-dot="avatar"] .card:has(.av.has) .new{
+/* The avatar's box is on the card whether or not there is a picture in it, so
+   the pinned dot follows the box — `.av`, not `.av.has`. */
+.grid[data-dot="avatar"] .card:has(.av) .new{
   position:absolute;margin:0;z-index:3;
   top:calc(14px + var(--av-size,30px) - var(--dot-size,7px));
   left:calc(15px + var(--av-size,30px) - var(--dot-size,7px));
@@ -968,3 +1047,32 @@ html.cat-mode .card .card-edit{display:none}
 .btn-dots.armed{background:var(--y);border-color:var(--y);color:var(--on-y);font-weight:700}
 .btn-dots.armed::after{content:' — sure?';letter-spacing:.04em}
 .btn-dots.armed .btn-n{background:var(--on-y);color:var(--y)}
+
+/* ── Pinned ──────────────────────────────────────────────────────────────────
+   A pin is an exception to whichever sort is on, so it is marked rather than
+   ordered into: the badge is only ever on the channels that have one, which is
+   why it can be on by default without costing the rest of the board anything. */
+.b-pin{color:var(--y);letter-spacing:.14em}
+.b-pin::before{content:'\2605 ';font-size:.92em}
+
+.btn-pin{color:var(--tx-2)}
+.btn-pin:hover{color:var(--tx);border-color:var(--bd-2)}
+.btn-pin.on{background:var(--yd);border-color:var(--yb);color:var(--y);font-weight:700}
+
+/* ── The "new" chip ──────────────────────────────────────────────────────────
+   Not a category — a question asked across all of them, so it sits with the
+   category chips but wears the dot's colour rather than a category's. */
+.chip.only-new{border-style:dashed}
+.chip.only-new.on{border-style:solid}
+
+/* ── Installing ──────────────────────────────────────────────────────────── */
+.inst{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+.inst-said{
+  padding:3px 8px;border-radius:var(--r1);
+  background:var(--yd);color:var(--y);
+  font:700 9px/1.4 var(--mono);letter-spacing:.18em;text-transform:uppercase;
+}
+.inst-note{
+  max-width:210px;text-align:right;
+  font:500 10px/1.45 var(--mono);letter-spacing:.06em;color:var(--tx-2);
+}

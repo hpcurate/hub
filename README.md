@@ -1,6 +1,7 @@
 # HUB
 
 A board of YouTube channels. Open `index.html` — that is the whole install.
+It is also a Chromium extension, and, served over https, an installable web app.
 
 Built in ROOT's design language: the same VOID palette, the same shape and
 motion tokens, Grotesk for titles and JetBrains Mono for everything else.
@@ -38,7 +39,10 @@ motion tokens, Grotesk for titles and JetBrains Mono for everything else.
 - **Colour coding** — a category's colour is its spine down the left of every
   card, its dot on the filter chip, and a faint wash across the tile.
 - **Sort** — last viewed, longest unwatched, recently added, name, category,
-  most clicked.
+  most clicked, and **newest upload**, which is the one a board of channels is
+  really asked for: what is new.
+- **Pins** — a channel pinned in its edit pane sits at the front of the board
+  whatever the sort is. A pin is an exception to an order, not an order.
 - **Click heat** — a rule under each card, coloured by where that channel sits
   between the least and the most opened on the board. The two ends of the
   gradient are yours to pick in settings, and so is **how many steps** there are
@@ -46,7 +50,10 @@ motion tokens, Grotesk for titles and JetBrains Mono for everything else.
   forty colours nobody can tell apart. Whether the line and the click counts show
   at all is a switch too.
 - **Filter** — any number of category chips at once, plus a live search over
-  names, descriptions and category names.
+  names, descriptions and category names. The **new** chip is not a category but
+  a question asked across all of them: only the channels that have posted since
+  you last looked. It is only there when the answer is yes, and the count is in
+  the tab's own title too, so a pinned tab answers it without being opened.
 - **Time since last viewed** — clicking a card opens the channel and stamps the
   time. The card then says how long ago that was, and it is a sort order.
 - **Size** — S / M / L moves the grid's minimum column width. The columns
@@ -60,6 +67,16 @@ motion tokens, Grotesk for titles and JetBrains Mono for everything else.
   viewed, click count, when the channel last posted, when you added it, its rank
   on the board by clicks, how many of its videos you have queued, its handle,
   the category tag, and a dot when there is something new.
+- **The avatar** — six dials of its own, because a picture is what the eye lands
+  on first: size, shape (circle, rounded, squircle, square, hexagon), edge
+  (hairline, none, accent, ring), whether the picture is cropped or fitted, its
+  colour (full, grey, grey-until-hovered, or tinted the category's colour), and
+  **what stands in when there is no picture** — the channel's initial, its
+  category's icon, or a silhouette. That last one is not a nicety: off disk
+  there are never any avatars, because a `file://` page cannot fetch
+  youtube.com, so without it half of HUB has an empty slot on every card. There
+  is also a wash — the same picture again, huge and faint, as the card's own
+  ground.
 - **The card editor** — **card** on the bar opens it. A card is **six zones**,
   two to a row, and every part of one — avatar, name, description, category tag,
   badges, the count, the new dot, the edit button — names the zone it sits in.
@@ -76,7 +93,28 @@ motion tokens, Grotesk for titles and JetBrains Mono for everything else.
   the extension — how often a feed is checked, how long an avatar is trusted, and
   how many channels are asked about at once.
 
-Keys: `/` search · `Enter` opens the first result · `n` new channel · `Esc` close.
+Keys: `/` search · `Enter` opens the first result · `n` new channel ·
+`r` opens one at random from whatever is on screen · `Esc` close.
+
+## As a web app
+
+Served over https — GitHub Pages, or anything else — HUB installs. Its own
+window, its own icon, and it opens with **no network at all**: a service worker
+holds the whole board, which is a dozen small files, plus the two fonts.
+
+**Install** is in settings, under *this app*, when the browser offers it;
+Safari and Firefox install from their own menus instead and the row says so.
+
+It is the same board and the same storage as everywhere else — nothing about the
+app is a different app. The worker is **network first**, so an update is live the
+next time it is opened rather than a week later; only when the browser says
+there is no network at all does the cache answer first, which is what makes a
+cold offline start instant rather than a wait for a dozen connections to fail.
+
+None of it runs anywhere it does not belong: off disk (`file://` has no origin
+to scope a worker to) and inside the extension (which has a service worker of
+its own — the guard's) `js/webapp.js` registers nothing, and the board is
+exactly what it always was.
 
 ## The extension
 

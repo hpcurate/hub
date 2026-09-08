@@ -1,11 +1,20 @@
 #!/usr/bin/env python3
-"""Writes the extension's icons. No dependencies — a PNG is a zlib stream in a
-few length-prefixed chunks, and the mark is simple enough to rasterise by hand.
+"""Writes the icons — the extension's three, and the web app's.
+
+No dependencies: a PNG is a zlib stream in a few length-prefixed chunks, and the
+mark is simple enough to rasterise by hand.
 
     python icons/make-icons.py
 
-The mark is HUB's favicon at three sizes: the app's ground, a violet dot inside
-a light ring. Regenerate rather than editing the PNGs."""
+The mark is HUB's favicon at every size: the app's ground, a violet dot inside a
+light ring. Regenerate rather than editing the PNGs.
+
+The 192 and 512 are the web app manifest's, and there is a **maskable** 512 as
+well. A maskable icon is cropped to whatever shape the platform likes — a circle
+on Android — so it is drawn full bleed with square corners; the rounded ground
+that suits a browser tab would have its corners cut off and read as a mistake.
+The mark itself is well inside the 80% safe zone at every size, so one drawing
+serves both."""
 import struct, zlib, os
 
 BG   = (0x0e, 0x0e, 0x0e)
@@ -13,11 +22,14 @@ RING = (0xde, 0xde, 0xde)
 DOT  = (0xa7, 0x8b, 0xfa)
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-def px(size):
-    """Rows of RGBA, supersampled 4x4 per pixel so the curves are not jagged."""
+def px(size, maskable=False):
+    """Rows of RGBA, supersampled 4x4 per pixel so the curves are not jagged.
+
+    `maskable` drops the rounded ground for a full-bleed square one — see the
+    note at the top about what the platform does to it afterwards."""
     c, S = (size - 1) / 2.0, 4
     r_out, r_in, r_dot = size * 0.34, size * 0.34 - max(1.0, size / 16.0), size * 0.145
-    corner = size * 0.125
+    corner = 0.0 if maskable else size * 0.125
     rows = []
     for y in range(size):
         row = bytearray()
@@ -50,8 +62,8 @@ def px(size):
         rows.append(bytes(row))
     return rows
 
-def png(path, size):
-    raw = b''.join(b'\x00' + r for r in px(size))
+def png(path, size, maskable=False):
+    raw = b''.join(b'\x00' + r for r in px(size, maskable))
     def chunk(tag, data):
         return struct.pack('>I', len(data)) + tag + data + \
                struct.pack('>I', zlib.crc32(tag + data) & 0xffffffff)
@@ -64,6 +76,9 @@ def png(path, size):
     return len(out)
 
 if __name__ == '__main__':
-    for s in (16, 48, 128):
+    # the extension's three, then the web app's two, then the maskable one
+    for s in (16, 48, 128, 192, 512):
         p = os.path.join(HERE, '%d.png' % s)
         print('%-3d -> %s (%d bytes)' % (s, os.path.basename(p), png(p, s)))
+    p = os.path.join(HERE, 'maskable-512.png')
+    print('%-3s -> %s (%d bytes)' % ('512m', os.path.basename(p), png(p, 512, True)))

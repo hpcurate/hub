@@ -1,0 +1,28 @@
+{
+  "name": "HUB — channel board",
+  "short_name": "HUB",
+  "description": "A board of YouTube channels. Sort it, filter it, and open one.",
+  "id": "./",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "browser"],
+  "orientation": "any",
+  "background_color": "#0e0e0e",
+  "theme_color": "#0e0e0e",
+  "categories": ["productivity", "utilities"],
+  "icons": [
+    { "src": "icons/192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Add a channel",
+      "short_name": "Add",
+      "description": "Open the board with the new-channel pane already up",
+      "url": "./index.html?new=1",
+      "icons": [{ "src": "icons/192.png", "sizes": "192x192" }]
+    }
+  ]
+}

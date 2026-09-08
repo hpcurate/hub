@@ -1095,6 +1095,267 @@ console.log('\nthe filter plays the board’s own entry');
      $$('#grid .card').every(c => c.classList.contains('in')));
 }
 
+console.log('\nthe avatar, every way of showing one');
+click($('#btn-card'));
+await tick();
+{
+  const card = () => $$('#grid .card').find(el => el.dataset.id === withPic);
+  /* One channel with a picture, one without — the second is the case that
+     matters, because off disk every channel is that case. */
+  const withPic = w.Store.channels()[0].id;
+  const noPic = w.Store.channels().find(c => c.id !== withPic && !c.avatar);
+  w.Store.enrich(withPic, { avatar:'https://yt3.example/a.jpg' });
+  set($('#q'), '');
+  await tick();
+
+  const bare = () => $$('#grid .card').find(el => el.dataset.id === noPic.id);
+  ok('a channel with no picture still has an avatar box', !!bare().querySelector('.av'));
+  ok('and it is not pretending to have one', !bare().querySelector('.av').classList.contains('has'));
+  ok('what it draws instead is the channel’s initial',
+     bare().querySelector('.av-fb').textContent ===
+       noPic.name.replace(/^@+/, '')[0].toUpperCase(),
+     bare().querySelector('.av-fb').textContent);
+  ok('the one with a picture draws the picture',
+     card().querySelector('.av').classList.contains('has') &&
+     card().querySelector('.av img').getAttribute('src') === 'https://yt3.example/a.jpg');
+
+  click($('#card-body [data-k="avatarFallback"] .seg-b[data-v="icon"]'));
+  await tick();
+  ok('the fallback can be the category’s icon instead',
+     bare().querySelector('.av').dataset.fb === 'icon');
+  click($('#card-body [data-k="avatarFallback"] .seg-b[data-v="none"]'));
+  await tick();
+  ok('or nothing at all, and then the box leaves the card', !bare().querySelector('.av'));
+  ok('while a channel that has a picture keeps its box', !!card().querySelector('.av'));
+  click($('#card-body [data-k="avatarFallback"] .seg-b[data-v="initial"]'));
+  await tick();
+  ok('and back', !!bare().querySelector('.av-fb'));
+
+  click($('#card-body [data-k="avatarShape"] .seg-b[data-v="hex"]'));
+  await tick();
+  ok('there are five shapes now, including a hexagon', $('#grid').dataset.avatar === 'hex');
+  click($('#card-body [data-k="avatarShape"] .seg-b[data-v="squircle"]'));
+  await tick();
+  ok('and a squircle', $('#grid').dataset.avatar === 'squircle');
+  click($('#card-body [data-k="avatarShape"] .seg-b[data-v="circle"]'));
+  await tick();
+
+  click($('#card-body [data-k="avatarBorder"] .seg-b[data-v="ring"]'));
+  await tick();
+  ok('the edge can be a ring', $('#grid').getAttribute('data-avatar-border') === 'ring');
+  click($('#card-body [data-k="avatarFit"] .seg-b[data-v="contain"]'));
+  await tick();
+  ok('the picture can be fitted rather than cropped',
+     $('#grid').getAttribute('data-avatar-fit') === 'contain');
+  click($('#card-body [data-k="avatarTone"] .seg-b[data-v="hover"]'));
+  await tick();
+  ok('and it can be grey until you point at it',
+     $('#grid').getAttribute('data-avatar-tone') === 'hover');
+  click($('#card-body [data-k="avatarTone"] .seg-b[data-v="full"]'));
+  await tick();
+
+  ok('the wash is off to begin with', card().style.getPropertyValue('--wash') === '0');
+  set($('#s-avatarWash'), '12');
+  await tick();
+  ok('and can be turned up', card().style.getPropertyValue('--wash') === '0.120',
+     card().style.getPropertyValue('--wash'));
+  ok('it is the channel’s own picture behind the card',
+     card().querySelector('.wash').style.backgroundImage.includes('yt3.example'));
+  ok('a channel with no picture has no wash to show',
+     !bare().querySelector('.wash').style.backgroundImage);
+  set($('#s-avatarWash'), '0');
+  await tick();
+  ok('and off again', card().style.getPropertyValue('--wash') === '0');
+  ok('every dial of it is remembered', (() => {
+    const u = JSON.parse(w.localStorage.getItem('hub.ui.v1'));
+    return u.avatarShape === 'circle' && u.avatarBorder === 'ring'
+        && u.avatarFit === 'contain' && u.avatarTone === 'full'
+        && u.avatarFallback === 'initial' && u.avatarWash === 0;
+  })());
+  click($('#card-body [data-k="avatarBorder"] .seg-b[data-v="hairline"]'));
+  click($('#card-body [data-k="avatarFit"] .seg-b[data-v="cover"]'));
+  await tick();
+}
+click($('#sheet-card [data-close]'));
+await tick();
+
+console.log('\nnewest upload, as an order and as a filter');
+{
+  /* Three channels are wanted here and the board is not guaranteed to have
+     three by this point, so any that are missing are added rather than
+     assumed. */
+  while (w.Store.channels().length < 3)
+    w.Store.addChannel({ url:'https://www.youtube.com/@filler' + w.Store.channels().length });
+  const chans = w.Store.channels();
+  const now = Date.now();
+  w.Store.enrich(chans[0].id, { latest:{ videoId:'a', title:'oldest', at:now - 40 * 86400000 } });
+  w.Store.enrich(chans[1].id, { latest:{ videoId:'b', title:'newest', at:now - 60e3 } });
+  w.Store.enrich(chans[2].id, { latest:{ videoId:'c', title:'middle', at:now - 5 * 86400000 } });
+  w.Store.clearNew();                      /* start from no dots at all */
+  set($('#sort'), 'posted');
+  $('#sort').dispatchEvent(new w.Event('change', { bubbles:true }));
+  await tick();
+  const ids = $$('#grid .card').map(el => el.dataset.id);
+  ok('newest upload is a sort', ids[0] === chans[1].id, ids.slice(0, 3).join(','));
+  ok('and the older one is behind it',
+     ids.indexOf(chans[2].id) < ids.indexOf(chans[0].id));
+  ok('a channel with nothing known sorts to the end, not to 1970', (() => {
+    const none = w.Store.channels().find(c => !c.latest);
+    return !none || ids.indexOf(none.id) > ids.indexOf(chans[0].id);
+  })());
+
+  /* Only what is new. Two of the three have been acknowledged, so the chip
+     should be counting one. */
+  w.Store.enrich(chans[1].id, { latest:{ videoId:'b2', title:'brand new', at:Date.now() } });
+  set($('#q'), '');
+  await tick();
+  ok('the new chip is on the bar when there is something new', !!$('#chip-new'));
+  ok('and says how many', $('#chip-new .n').textContent === String(w.Store.countNew()));
+  click($('#chip-new'));
+  await tick();
+  ok('turning it on leaves only what is new',
+     $$('#grid .card').length === w.Store.countNew() && $$('#grid .card').length > 0,
+     $$('#grid .card').length + ' of ' + w.Store.countNew());
+  ok('and it is every card with a dot',
+     $$('#grid .card').every(el => el.classList.contains('is-new')));
+  click($('#chip-new'));
+  await tick();
+  ok('turning it off gives the board back', $$('#grid .card').length > w.Store.countNew());
+  set($('#sort'), 'name');
+  $('#sort').dispatchEvent(new w.Event('change', { bubbles:true }));
+  await tick();
+}
+
+console.log('\npinning a channel');
+{
+  const names = () => $$('#grid .card .card-name').map(e => e.textContent);
+  const last = w.Store.channels().find(c => c.name === names()[names().length - 1]);
+  ok('nothing is pinned to begin with', w.Store.pinned() === 0);
+
+  const card = $$('#grid .card').find(el => el.dataset.id === last.id);
+  click(card.querySelector('.card-edit'));
+  await tick();
+  ok('the channel pane offers a pin', !$('#c-pin').hidden);
+  click($('#c-pin'));
+  await tick();
+  ok('clicking it pins the channel', w.Store.channels().find(c => c.id === last.id).pin === true);
+  ok('and it is written down, not held until save',
+     JSON.parse(w.localStorage.getItem('hub.channels.v1')).find(c => c.id === last.id).pin === true);
+  ok('the button says so', $('#c-pin').classList.contains('on'));
+  click($('#sheet-ch [data-close]'));
+  await tick();
+
+  ok('a pinned channel is first whatever the sort', names()[0] === last.name, names()[0]);
+  ok('and it is marked as one', $('#grid .card .b-pin').textContent === 'pinned');
+  set($('#sort'), 'clicks');
+  $('#sort').dispatchEvent(new w.Event('change', { bubbles:true }));
+  await tick();
+  ok('still first under another sort', names()[0] === last.name);
+
+  click($('#btn-set'));
+  await tick();
+  click($('#set-body [data-k="pinFirst"]'));
+  await tick();
+  ok('pinning first can be switched off', names()[0] !== last.name);
+  click($('#set-body [data-k="pinFirst"]'));
+  await tick();
+  click($('#sheet-set [data-close]'));
+  await tick();
+
+  click($$('#grid .card').find(el => el.dataset.id === last.id).querySelector('.card-edit'));
+  await tick();
+  click($('#c-pin'));
+  await tick();
+  ok('and a pin comes off the same way',
+     w.Store.channels().find(c => c.id === last.id).pin === false);
+  ok('the mark goes with it', !$('#grid .card .b-pin'));
+  click($('#sheet-ch [data-close]'));
+  await tick();
+  set($('#sort'), 'name');
+  $('#sort').dispatchEvent(new w.Event('change', { bubbles:true }));
+  await tick();
+}
+
+console.log('\nthe tab says how many are new');
+{
+  w.Store.clearNew();
+  set($('#q'), '');
+  await tick();
+  ok('nothing new, and the title is just the app', d.title === 'HUB', d.title);
+  const ch = w.Store.channels()[0];
+  w.Store.enrich(ch.id, { latest:{ videoId:'t1', title:'one', at:Date.now() } });
+  set($('#q'), '');
+  await tick();
+  ok('one new, and the title counts it', d.title === 'HUB · 1 new', d.title);
+
+  click($('#btn-set'));
+  await tick();
+  click($('#set-body [data-k="titleCount"]'));
+  await tick();
+  ok('and it can be switched off', d.title === 'HUB');
+  click($('#set-body [data-k="titleCount"]'));
+  await tick();
+  click($('#sheet-set [data-close]'));
+  await tick();
+}
+
+console.log('\nr opens one of them');
+{
+  set($('#q'), '');
+  await tick();
+  let opened = 0;
+  $$('#grid .card .card-hit').forEach(a => a.addEventListener('click', () => { opened++ }));
+  d.dispatchEvent(new w.KeyboardEvent('keydown', { key:'r', bubbles:true }));
+  await tick();
+  ok('r opens exactly one card', opened === 1, String(opened));
+
+  /* From what is on screen, not from everything: the filter is already half of
+     the choice. */
+  set($('#q'), 'zzzzzznothingmatchesthis');
+  await tick();
+  let opened2 = 0;
+  $$('#grid .card .card-hit').forEach(a => a.addEventListener('click', () => { opened2++ }));
+  d.dispatchEvent(new w.KeyboardEvent('keydown', { key:'r', bubbles:true }));
+  await tick();
+  ok('and does nothing at all on an empty board', opened2 === 0);
+  set($('#q'), '');
+  await tick();
+}
+
+console.log('\nthe web app');
+{
+  /* jsdom has no service worker, so this is the "there is no web app here"
+     path — which is the one that has to be silent. Off disk and inside the
+     extension take the same path. */
+  ok('the page knows it cannot be installed here', w.eval('HubApp.can') === false);
+  ok('and says nothing about installing', (() => {
+    click($('#btn-set'));
+    const row = $('#set-body [data-k="install"]');
+    click($('#sheet-set [data-close]'));
+    return !row;
+  })());
+  ok('the board booted anyway', $$('#grid .card').length > 0);
+
+  /* The manifest and the worker are files the page names, so a typo in either
+     is a 404 nobody sees until they try to install. Checked as facts about the
+     repo, the way the [hidden] rule is. */
+  const html = fs.readFileSync(path.join(APP, 'index.html'), 'utf8');
+  ok('the page links a web app manifest', /rel="manifest" href="app\.webmanifest"/.test(html));
+  const man = JSON.parse(fs.readFileSync(path.join(APP, 'app.webmanifest'), 'utf8'));
+  ok('the manifest is json, and its own app', man.name && man.start_url && man.display === 'standalone');
+  ok('every icon it names is really there',
+     man.icons.every(i => fs.existsSync(path.join(APP, i.src))),
+     man.icons.map(i => i.src).join(' '));
+  ok('one of them is maskable', man.icons.some(i => i.purpose === 'maskable'));
+  const sw = fs.readFileSync(path.join(APP, 'sw.js'), 'utf8');
+  ok('the worker precaches every file the board is made of',
+     ['index.html', 'css/hub.css', 'js/app.js', 'js/store.js', 'ext/model.js', 'ext/scope.js']
+       .every(f => sw.includes('./' + f)));
+  ok('and it is registered from its own file, not from the board',
+     fs.readFileSync(path.join(APP, 'js', 'webapp.js'), 'utf8').includes('serviceWorker.register')
+     && !fs.readFileSync(path.join(APP, 'js', 'app.js'), 'utf8').includes('serviceWorker.register'));
+}
+
 console.log('\nhidden really means hidden');
 {
   /* A user-agent [hidden] rule loses to any class in the sheet that sets

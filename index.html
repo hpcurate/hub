@@ -16,6 +16,16 @@
        Space Grotesk, and --mono is JetBrains Mono in every pairing it ships. -->
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
 
+  <!-- The web app. Served over https this installs and keeps its own window;
+       off disk and inside the extension the manifest is simply ignored and the
+       board is what it always was. The extension's own manifest.json is a
+       different file and a different thing — this one is the web app's. -->
+  <link rel="manifest" href="app.webmanifest">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="HUB">
+  <link rel="apple-touch-icon" href="icons/192.png">
+
   <link rel="stylesheet" href="css/tokens.css">
   <link rel="stylesheet" href="css/hub.css">
 </head>
@@ -64,7 +74,8 @@
         <option value="stale">longest unwatched</option>
         <option value="added">recently added</option>
         <option value="name">name</option>
-        <option value="clicks">most clicked</option>
+        <option value="posted">newest upload</option>
+      <option value="clicks">most clicked</option>
         <option value="cat">category</option>
       </select>
     </label>
@@ -150,6 +161,9 @@
 
     <div class="sh-acts">
       <button type="button" class="btn btn-danger" id="c-del" hidden>delete</button>
+      <!-- Written through the moment it is clicked, not on save: pinning is
+           something you do to a channel that exists, not a field of one. -->
+      <button type="button" class="btn btn-pin" id="c-pin" hidden>&#9734; pin</button>
       <span class="grow"></span>
       <button type="button" class="btn" data-close>cancel</button>
       <button type="submit" class="btn btn-y" id="c-save">save</button>
@@ -250,6 +264,7 @@
 <script src="ext/model.js"></script>
 <script src="ext/yt.js"></script>
 <script src="js/store.js"></script>
+<script src="js/webapp.js"></script>
 <script src="js/bridge.js"></script>
 <script src="js/enrich.js"></script>
 <script src="js/app.js"></script>

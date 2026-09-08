@@ -23,6 +23,7 @@ let q = '';
 let sort = ui.sort;
 let size = ui.size;
 let picked = new Set();          /* empty = every category */
+let onlyNew = false;             /* the "new" chip: only what has posted since */
 
 /* A category's icon, as an <svg> that inherits the colour of whatever it is
    drawn inside. An unknown key draws nothing rather than a broken glyph, which
@@ -78,6 +79,11 @@ function list(){
 
   if (picked.size) out = out.filter(c => picked.has(c.cat || ''));
 
+  /* "Only what has something new" is a filter and not a sort, because the
+     question it answers is "is there anything to watch", and the answer to that
+     is allowed to be an empty board. */
+  if (onlyNew) out = out.filter(c => Store.isNew(c));
+
   if (term) out = out.filter(c => {
     const cat = Store.cat(c.cat);
     return (c.name + ' ' + c.desc + ' ' + (cat ? cat.name : '')).toLowerCase().includes(term);
@@ -100,11 +106,22 @@ function list(){
       /* most opened first. Ties fall back to the name so the board does not
          shuffle every time two channels are level. */
       case 'clicks': return (b.clicks || 0) - (a.clicks || 0) || byName(a, b);
+      /* Newest upload first. The board has known each channel's latest video
+         since v0.5.0 and could not be ordered by it, which is the one order a
+         board of channels is actually asked for: what is new. Channels with
+         nothing known sort to the end rather than to 1970. */
+      case 'posted': return ((b.latest && b.latest.at) || 0) - ((a.latest && a.latest.at) || 0)
+                          || byName(a, b);
       case 'name':  return byName(a, b);
       case 'cat':   return (order.has(a.cat) ? order.get(a.cat) : 1e6)
                          - (order.has(b.cat) ? order.get(b.cat) : 1e6) || byName(a, b);
     }
   });
+
+  /* Pins are an exception to whichever sort is on, not a sort of their own, so
+     they are lifted afterwards and keep their order among themselves. */
+  if (ui.pinFirst) out = out.filter(c => c.pin).concat(out.filter(c => !c.pin));
+
   return out;
 }
 
@@ -137,7 +154,7 @@ function build(ch){
         '<div class="zone" data-z="' + ZONES[i * 2] + '"></div>' +
         '<div class="zone" data-z="' + ZONES[i * 2 + 1] + '"></div>' +
       '</div>').join('') +
-    '<span class="heat"></span>';
+    '<span class="wash"></span><span class="heat"></span>';
 
   /* Every movable part, made once. They live on the node rather than being
      looked up by selector, because half of them are not in the card at any
@@ -150,7 +167,10 @@ function build(ch){
     return n;
   };
   const parts = {
-    avatar: mk('span', 'av', '<img alt="" loading="lazy">'),
+    /* The picture, and what stands in for it. Both are always in the slot; which
+       one is drawn is a class, because a channel gets its avatar minutes after
+       it is added and the card should not be rebuilt when it arrives. */
+    avatar: mk('span', 'av', '<img alt="" loading="lazy"><span class="av-fb"></span>'),
     dot:    mk('button', 'new'),
     name:   mk('h3', 'card-name'),
     desc:   mk('p', 'card-desc'),
@@ -215,7 +235,7 @@ function build(ch){
    that is off is not here, and so is not in the card at all. */
 function liveParts(el, ch){
   const has = {
-    avatar: ui.showAvatars && !!ch.avatar,
+    avatar: ui.showAvatars && (!!ch.avatar || ui.avatarFallback !== 'none'),
     dot:    ui.showNew && Store.isNew(ch),
     name:   true,
     desc:   ui.showDesc,
@@ -251,6 +271,9 @@ function place(el, ch){
    which is not the same as the badge being off. A channel with no upload date
    known simply shows no upload badge, whatever the setting says. */
 const BADGES = [
+  { k:'showPin',    label:'a mark on a pinned channel', cls:'pin',
+    note:'only ever on the pinned ones, so it costs the rest nothing',
+    get: ch => ch.pin ? 'pinned' : null },
   { k:'showSeen',   label:'time since last viewed', cls:'seen',
     get: ch => since(ch.seen) },
   { k:'showCounts', label:'click count', cls:'count',
@@ -373,16 +396,32 @@ function paint(el, ch){
 
   el._parts.name.textContent = ch.name;
 
-  /* The avatar is the fastest way to find a channel on a board of forty, and
-     the one thing the board could not say about a channel until now. */
+  /* ── The avatar ────────────────────────────────────────────────────────────
+     The fastest way to find a channel on a board of forty. When there is no
+     picture — which is every channel on a board opened off disk, because a
+     file:// page cannot fetch youtube.com — something stands in for it: the
+     channel's initial, its category's icon, or a silhouette. */
   const av = el._parts.avatar;
   const img = av.querySelector('img');
   av.classList.toggle('has', !!ch.avatar);
   if (ch.avatar && img.getAttribute('src') !== ch.avatar) img.src = ch.avatar;
   if (!ch.avatar) img.removeAttribute('src');
-  /* An avatar url can rotate. A broken image should read as "no avatar", not
-     as a torn page. */
-  img.onerror = () => { av.classList.remove('has'); img.removeAttribute('src') };
+  /* An avatar url can rotate. A broken image should read as "no avatar", which
+     now means the fallback, not a torn page. */
+  img.onerror = () => { av.classList.remove('has'); img.removeAttribute('src'); paintFallback(av, ch, cat) };
+  paintFallback(av, ch, cat);
+
+  /* The same picture again, huge and faint, behind the whole card. Off by
+     default and a range rather than a switch, because the line between "a
+     texture" and "a poster you cannot read the name on" is a number and it is
+     not the same number for every board. */
+  const wash = el.querySelector('.wash');
+  const useWash = ch.avatar && ui.avatarWash > 0;
+  /* encodeURI, and only then quoted: a url is data from YouTube's markup, and
+     a quote inside one would otherwise end the CSS string and start something
+     of its own. */
+  wash.style.backgroundImage = useWash ? 'url("' + encodeURI(ch.avatar) + '")' : '';
+  el.style.setProperty('--wash', useWash ? (ui.avatarWash / 100).toFixed(3) : '0');
 
   el.classList.toggle('is-new', Store.isNew(ch));
   /* Posted in the last day: not a dot but a whole card — a lit edge, a warmer
@@ -406,6 +445,39 @@ function paint(el, ch){
 
   paintHeat(el, ch);
   paintBadges(el, ch);              /* which ends by placing everything */
+}
+
+/* What is drawn where the picture would be. `initial` is the first letter of
+   the name with any @ dropped — the handle's @ is part of the URL, not of the
+   name — `icon` is the category's own glyph, and `ghost` is a silhouette. All
+   three take the category's colour from the card, so a board with no pictures
+   at all still reads as a coloured board. */
+const GHOST = '<circle cx="12" cy="9" r="3.6"/><path d="M4.5 20.5c0-4 3.4-6.4 7.5-6.4s7.5 2.4 7.5 6.4"/>';
+
+function paintFallback(av, ch, cat){
+  const box = av.querySelector('.av-fb');
+  const how = ui.avatarFallback;
+  box.textContent = '';
+  av.dataset.fb = how;
+  if (how === 'none' || ch.avatar) return;
+
+  if (how === 'initial'){
+    const name = String(ch.name || '').replace(/^@+/, '').trim();
+    box.textContent = (name[0] || '?').toUpperCase();
+    return;
+  }
+  if (how === 'icon'){
+    const ic = cat && iconEl(cat.icon);
+    if (ic){ box.appendChild(ic); return }
+    /* A category with no icon, or none at all, has nothing to draw — the
+       silhouette is the honest answer rather than an empty ring. */
+  }
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('class', 'ico');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.innerHTML = GHOST;
+  box.appendChild(svg);
 }
 
 /* ── FLIP ────────────────────────────────────────────────────────────────────
@@ -542,6 +614,11 @@ function renderDots(){
   const n = Store.countNew();
   btn.hidden = !n;
   $('#dots-n').textContent = n ? String(n) : '';
+
+  /* The same count in the tab's own title. A board left open in a pinned tab —
+     or installed, where the title is the window's — can then answer "is there
+     anything new" without being looked at. */
+  document.title = (ui.titleCount && n) ? 'HUB \u00b7 ' + n + ' new' : 'HUB';
 }
 
 /* ── Category filter chips ───────────────────────────────────────────────────
@@ -558,6 +635,22 @@ function renderChips(){
   all.textContent = 'all';
   all.addEventListener('click', () => { picked.clear(); reintro = true; render() });
   chips.appendChild(all);
+
+  /* Not a category — a question the board can be asked across all of them: is
+     there anything to watch. It is only there when the answer is yes, or when
+     it is already on and about to become no. */
+  const newN = Store.countNew();
+  if (newN || onlyNew){
+    const b = document.createElement('button');
+    b.className = 'chip only-new' + (onlyNew ? ' on' : '');
+    b.id = 'chip-new';
+    b.style.setProperty('--c', ui.newDotColor || 'var(--y)');
+    b.innerHTML = '<span class="t">new</span><span class="n"></span>';
+    b.querySelector('.n').textContent = newN;
+    b.title = 'Only channels that have posted since you last looked';
+    b.addEventListener('click', () => { onlyNew = !onlyNew; reintro = true; render() });
+    chips.appendChild(b);
+  }
 
   /* Favourites first. The manager's order is Hugo's and stays his; this is the
      order of the bar you actually pick from, where the four categories used
@@ -720,6 +813,21 @@ function openChannel(id){
   $('#c-del').hidden = !ch;
   $('#c-del').classList.remove('armed');
   $('#c-del').textContent = 'delete';
+
+  /* Pinning is not a property of the channel you are typing, it is a thing you
+     do to one that exists — so it writes through immediately rather than
+     waiting for save, and it is not on the new-channel pane at all. */
+  const pin = $('#c-pin');
+  pin.hidden = !ch;
+  const drawPin = () => {
+    const on = !!(editing && Store.channels().find(c => c.id === editing) || {}).pin;
+    pin.classList.toggle('on', on);
+    pin.textContent = on ? '\u2605 pinned' : '\u2606 pin';
+    pin.title = on ? 'Pinned to the front of the board' : 'Pin to the front of the board';
+    pin.setAttribute('aria-pressed', on ? 'true' : 'false');
+  };
+  drawPin();
+  pin.onclick = () => { Store.togglePin(editing); drawPin(); render() };
 
   let sel = ch ? ch.cat : (Store.cats()[0] ? Store.cats()[0].id : '');
   const draw = () => catPicker(sel, id2 => { sel = id2; draw() });
@@ -1125,10 +1233,24 @@ const CARD_SETTINGS = [
     { k:'zones', t:'zones', label:'the six zones',
       note:'side by side, hung from the top, or stacked' },
   ]],
+  ['the avatar', [
+    { k:'avatarSize',     t:'range', label:'size', min:20, max:96, step:2, fmt:v => v + 'px' },
+    { k:'avatarShape',    t:'seg',   label:'shape',
+      opts:['circle', 'rounded', 'squircle', 'square', 'hex'] },
+    { k:'avatarBorder',   t:'seg',   label:'edge', opts:['hairline', 'none', 'accent', 'ring'] },
+    { k:'avatarFit',      t:'seg',   label:'how the picture fills it',
+      opts:['cover', 'contain'], note:'cover crops it, contain fits the whole of it in' },
+    { k:'avatarTone',     t:'seg',   label:'colour',
+      opts:['full', 'mono', 'hover', 'tint'],
+      note:'hover is grey until you point at it; tint takes the category colour' },
+    { k:'avatarFallback', t:'seg',   label:'when there is no picture',
+      opts:['initial', 'icon', 'ghost', 'none'],
+      note:'off disk there are never any — the board cannot fetch youtube' },
+    { k:'avatarWash',     t:'range', label:'the picture, behind the card',
+      min:0, max:30, step:1, fmt:v => v ? v + '%' : 'off',
+      note:'huge and faint, as the card\u2019s own ground' },
+  ]],
   ['the parts themselves', [
-    { k:'avatarSize',   t:'range', label:'avatar size', min:20, max:72, step:2, fmt:v => v + 'px' },
-    { k:'avatarShape',  t:'seg',   label:'avatar shape', opts:['circle', 'rounded', 'square'] },
-    { k:'avatarBorder', t:'seg',   label:'avatar edge', opts:['hairline', 'none', 'accent'] },
     { k:'nameLines',    t:'range', label:'lines for the name', min:1, max:4, step:1, fmt:String },
     { k:'descLines',    t:'range', label:'description lines', min:1, max:8, step:1, fmt:String },
     { k:'countStyle',   t:'seg',   label:'how the count reads',
@@ -1166,6 +1288,7 @@ const SETTINGS = [
       note:'what a card shows, and where on it each part sits' },
   ]],
   ['what a card says', [
+    { k:'showPin',    t:'toggle', label:'a mark on a pinned channel' },
     { k:'showSeen',   t:'toggle', label:'time since last viewed' },
     { k:'showCounts', t:'toggle', label:'click counts' },
     { k:'showHeat',   t:'toggle', label:'click heat line' },
@@ -1183,6 +1306,10 @@ const SETTINGS = [
   ]],
   ['board', [
     { k:'hideEmpty',  t:'toggle', label:'hide empty categories' },
+    { k:'pinFirst',   t:'toggle', label:'pinned channels first',
+      note:'ahead of whatever the board is sorted by' },
+    { k:'titleCount', t:'toggle', label:'the number of new videos in the tab title',
+      note:'what makes a pinned tab, or an installed app, worth having' },
     { k:'favFirst',   t:'toggle', label:'favourite categories first',
       note:'in the chips, the quick menu and the filing bar' },
     { k:'openTab',    t:'seg',    label:'where a card lands',
@@ -1190,6 +1317,10 @@ const SETTINGS = [
     { k:'enterOpens', t:'toggle', label:'enter opens the first result',
       note:'type in search, press enter' },
     { k:'newTab',     t:'toggle', label:'open channels in a new tab', ext:true },
+  ]],
+  ['this app', [
+    { k:'install', t:'install', label:'install hub',
+      note:'its own window, its own icon, and it opens with no network' },
   ]],
   ['youtube', [
     { k:'addMode',     t:'toggle', label:'add mode',
@@ -1239,6 +1370,8 @@ function applyLook(){
     g.dataset.avatarBorder = ui.avatarBorder;
     g.dataset.count = ui.countStyle;
     g.dataset.avatar = ui.avatarShape;
+    g.dataset.avatarFit = ui.avatarFit;
+    g.dataset.avatarTone = ui.avatarTone;
     g.dataset.dot = ui.dotOnAvatar ? 'avatar' : 'slot';
     /* Every zone's own direction, as one attribute each. A zone is a flex box
        and this is which way it runs, which is the only thing the stylesheet
@@ -1287,7 +1420,10 @@ function renderSettings(){
 function buildPane(box, spec){
   box.textContent = '';
   spec.forEach(([name, items]) => {
-    const live = items.filter(it => !it.ext || inExt());
+    /* `ext` rows only mean something with a browser extension around them;
+       `web` rows only mean something when the board is being served, which is
+       neither the extension nor a file off disk. */
+    const live = items.filter(it => (!it.ext || inExt()) && (it.t !== 'install' || HubApp.can));
     if (!live.length) return;
     const h = document.createElement('p');
     h.className = 'set-h';
@@ -1553,6 +1689,47 @@ function control(it){
     row.appendChild(map);
   }
 
+  /* ── Installing ────────────────────────────────────────────────────────────
+     The one row in settings that is not a setting: it is a state, and which of
+     four it is decides what the row says. Off disk and inside the extension it
+     is not there at all — `ext` marks the extension-only rows, and this is the
+     opposite, so it is checked here. */
+  if (it.t === 'install'){
+    const out = document.createElement('div');
+    out.className = 'inst';
+    const draw = async () => {
+      out.textContent = '';
+      if (HubApp.installed()){
+        const b = document.createElement('span');
+        b.className = 'inst-said';
+        b.textContent = 'installed';
+        out.appendChild(b);
+        return;
+      }
+      if (HubApp.installable()){
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'btn btn-s btn-y'; b.textContent = 'install';
+        b.addEventListener('click', async () => { await HubApp.install(); draw() });
+        out.appendChild(b);
+        return;
+      }
+      const n = document.createElement('span');
+      n.className = 'inst-note';
+      /* Safari and Firefox install from their own menus and never offer a
+         prompt to fire, so "there is no button" is not the same as "you
+         cannot". Saying which it is beats a button that does nothing. */
+      n.textContent = await HubApp.ready()
+        ? 'ready — install it from the browser\u2019s own menu'
+        : 'served over https, this installs';
+      out.appendChild(n);
+    };
+    draw();
+    /* The browser decides when it is willing to offer this, which can be after
+       the pane is already open. */
+    HubApp.onChange(draw);
+    row.appendChild(out);
+  }
+
   /* A row that is a door to another pane rather than a setting of its own. */
   if (it.t === 'link'){
     const b = document.createElement('button');
@@ -1770,6 +1947,16 @@ addEventListener('keydown', e => {
 
   if (e.key === '/'){ e.preventDefault(); $('#q').focus(); $('#q').select() }
   else if (e.key === 'n'){ e.preventDefault(); openChannel(null) }
+  /* One of whatever is on screen, opened. A board is a list of things worth
+     watching and the hardest question it asks is which one — so `r` answers it,
+     from the filtered board rather than from everything, because the filter is
+     already half the choice. */
+  else if (e.key === 'r'){
+    const cards = $$('#grid .card');
+    if (!cards.length) return;
+    e.preventDefault();
+    cards[Math.floor(Math.random() * cards.length)].querySelector('.card-hit').click();
+  }
 });
 
 /* ── The clock ───────────────────────────────────────────────────────────────

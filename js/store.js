@@ -172,9 +172,23 @@ const Store = (() => {
       if (patch.name !== undefined) ch.name = patch.name.trim() || nameFromUrl(ch.url) || 'untitled';
       if (patch.desc !== undefined) ch.desc = patch.desc.trim();
       if (patch.cat  !== undefined) ch.cat  = patch.cat;
+      if (patch.pin  !== undefined) ch.pin  = !!patch.pin;
       saveCh();
       return ch;
     },
+
+    /* A pin is not a sort, it is an exception to whichever sort is on: the four
+       channels you actually open sit at the front whatever the board is
+       currently ordered by. Same argument as a favourite category, one level
+       down. */
+    togglePin(id){
+      const ch = channels.find(c => c.id === id);
+      if (!ch) return false;
+      ch.pin = !ch.pin; saveCh();
+      return ch.pin;
+    },
+
+    pinned: () => channels.filter(c => c.pin).length,
 
     removeChannel(id){ channels = channels.filter(c => c.id !== id); saveCh() },
 

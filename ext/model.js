@@ -96,11 +96,23 @@ const HubModel = (() => {
 
     /* What a card shows. Off is a real answer for every one of them. */
     showAvatars:true, showDesc:true, descLines:4,
-    showTag:true, showSeen:true, showNew:true,
+    showTag:true, showSeen:true, showNew:true, showPin:true,
 
-    /* The avatar. */
-    avatarShape:'circle',     /* circle | rounded | square */
-    avatarBorder:'hairline',  /* none | hairline | accent */
+    /* ── The avatar ──────────────────────────────────────────────────────────
+       Six dials, because a picture is the thing the eye lands on first and
+       there is no one right way to show forty of them at once.
+
+       `fallback` is the one that earns its place hardest: off disk a board has
+       no avatars at all — a file:// page cannot fetch youtube.com and never
+       will — so without it that half of HUB has an empty slot on every card.
+       An initial in the category's colour is a picture of a sort. */
+    avatarShape:'circle',     /* circle | rounded | squircle | square | hex */
+    avatarBorder:'hairline',  /* none | hairline | accent | ring */
+    avatarFit:'cover',        /* cover | contain */
+    avatarTone:'full',        /* full | mono | hover | tint */
+    avatarFallback:'initial', /* initial | icon | ghost | none */
+    /* The picture again, huge and faint, behind the whole card. 0 is off. */
+    avatarWash:0,
 
     /* The new-video dot. Where it sits is a slot like everything else; pinning
        it puts it on the corner of the avatar instead, which is the one place
@@ -129,6 +141,10 @@ const HubModel = (() => {
        on: its home page is a trailer and three shelves, its videos tab is the
        thing you clicked for. */
     enterOpens:true, newTab:true, openTab:'videos',
+    /* Pinned channels ahead of every sort, and the number of channels with
+       something new in the tab's own title — which is what makes HUB worth
+       leaving open in a pinned tab, or installed. */
+    pinFirst:true, titleCount:true,
 
     /* The extension. checkEvery is in hours; a feed that is polled harder than
        this tells you nothing more, because uploads are not that frequent. */
@@ -210,6 +226,7 @@ const HubModel = (() => {
       name: String(name || '').trim() || nameFromUrl(u) || 'untitled',
       desc: String(desc || '').trim(),
       cat: cat || '',
+      pin: false,
       added: Date.now(),
       seen: null,         /* null is "never viewed", not "viewed at 0" */
       clicks: 0,
@@ -220,7 +237,7 @@ const HubModel = (() => {
      Filling them in on read rather than migrating on write means an old board
      opened in a new build is simply correct, with nothing to run first. */
   const fillChannel = c => ({
-    clicks:0, seen:null, desc:'', cat:'',
+    clicks:0, seen:null, desc:'', cat:'', pin:false,
     /* Filled in later by the extension, from the channel's own page and feed.
        Empty is not an error, it is "not looked up yet". */
     ytId:'', avatar:'', latest:null, checkedAt:0, pageAt:0,
