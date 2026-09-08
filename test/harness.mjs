@@ -354,6 +354,129 @@ await tick();
 click($('#sheet-cat [data-close]'));
 await tick();
 
+console.log('\ncategory icons');
+click($('#btn-cats'));
+await tick();
+{
+  const c = w.Store.cats()[0];
+  const row = $$('#cat-list .cat-r')[0];
+  const ib = row.querySelector('.cat-ico');
+  ok('every row has an icon button', !!ib);
+  ok('and it starts with no icon', ib.textContent.trim() === '\u2014');
+
+  click(ib);
+  await tick();
+  const grid = $('#cat-list .icon-grid');
+  ok('clicking it opens the grid under that row', !!grid);
+  ok('twenty icons plus none', grid.querySelectorAll('.ic-b').length === 21,
+     String(grid && grid.querySelectorAll('.ic-b').length));
+  ok('only one grid is ever open', $$('#cat-list .icon-grid').length === 1);
+
+  click(grid.querySelectorAll('.ic-b')[3]);      // none, play, music, code
+  await tick();
+  ok('picking one sets the icon', w.Store.cat(c.id).icon === 'code', w.Store.cat(c.id).icon);
+  ok('and closes the grid', !$('#cat-list .icon-grid'));
+  ok('the choice is persisted',
+     JSON.parse(w.localStorage.getItem('hub.cats.v1'))[0].icon === 'code');
+
+  ok('the icon reaches the filter chip',
+     !![...$('#chips').children].find(el => el.textContent.startsWith(c.name))
+       .querySelector('svg.ico'));
+
+  const carded = $$('#grid .card').find(el => el.querySelector('.tag').textContent.includes(c.name));
+  if (carded) ok('and the card it names', !!carded.querySelector('.tag svg.ico'));
+  else ok('and the card it names (none on the board to check)', true);
+
+  click($('#cat-list .cat-r .cat-ico'));
+  await tick();
+  click($('#cat-list .icon-grid .ic-b')[0] || $('#cat-list .icon-grid .ic-b'));
+  await tick();
+  ok('no icon can be chosen again', w.Store.cat(c.id).icon === '');
+}
+click($('#sheet-cat [data-close]'));
+await tick();
+
+console.log('\nquick categorise');
+{
+  const card = $$('#grid .card')[0];
+  const id = card.dataset.id;
+  const target = w.Store.cats()[1];
+
+  click(card.querySelector('.tag'));
+  await tick();
+  ok('clicking a card\u2019s tag opens the menu', !$('#qmenu').hidden);
+  ok('with every category plus uncategorised',
+     $$('#qmenu .qi').length === w.Store.cats().length + 1);
+  ok('and it marks the one it is in now', $$('#qmenu .qi.on').length === 1);
+
+  click([...$('#qmenu').children].find(b => b.textContent.includes(target.name)));
+  await tick();
+  ok('picking one files the channel',
+     w.Store.channels().find(c => c.id === id).cat === target.id);
+  ok('the menu closes behind it', $('#qmenu').hidden);
+  ok('and the card says so',
+     $$('#grid .card').find(el => el.dataset.id === id).querySelector('.tag')
+       .textContent.includes(target.name));
+  ok('the edit pane was never opened', $('#sheet-ch').hidden);
+
+  const card2 = $$('#grid .card')[0];
+  click(card2.querySelector('.tag'));
+  await tick();
+  ok('the menu opens again', !$('#qmenu').hidden);
+  click(card2.querySelector('.tag'));
+  await tick();
+  ok('clicking the same tag shuts it', $('#qmenu').hidden);
+}
+
+console.log('\ncontent width');
+click($('#btn-set'));
+await tick();
+{
+  const root = d.documentElement;
+  ok('the slider shows the current width', $('#s-width-v').textContent === '1560px',
+     $('#s-width-v').textContent);
+  set($('#s-width'), '1200');
+  await tick();
+  ok('moving it narrows the board', root.style.getPropertyValue('--app-w') === '1200px');
+  ok('and the label follows', $('#s-width-v').textContent === '1200px');
+  ok('it is remembered', JSON.parse(w.localStorage.getItem('hub.ui.v1')).maxWidth === 1200);
+
+  set($('#s-width'), '2600');
+  await tick();
+  ok('the top of the range is the whole window', root.style.getPropertyValue('--app-w') === 'none');
+  ok('and says so', $('#s-width-v').textContent === 'full width');
+  ok('stored as 0, not as a number that is only nearly full',
+     JSON.parse(w.localStorage.getItem('hub.ui.v1')).maxWidth === 0);
+  set($('#s-width'), '1560');
+  await tick();
+}
+
+console.log('\nexport and import');
+{
+  const before = w.Store.channels().length;
+  const text = w.Store.exportJSON();
+  const parsed = JSON.parse(text);
+  ok('an export is a hub export', parsed.kind === 'hub.export' && parsed.version === 1);
+  ok('and carries all three', Array.isArray(parsed.channels) && Array.isArray(parsed.cats) && !!parsed.ui);
+  ok('with everything on the board', parsed.channels.length === before);
+
+  w.Store.removeChannel(w.Store.channels()[0].id);
+  ok('something was lost', w.Store.channels().length === before - 1);
+
+  const out = w.Store.importJSON(text);
+  ok('importing gives it back', !!out && w.Store.channels().length === before);
+  ok('and says what it restored', out.channels === before);
+  ok('it lands in storage, not only in memory',
+     JSON.parse(w.localStorage.getItem('hub.channels.v1')).length === before);
+
+  ok('junk is refused', w.Store.importJSON('{"hello":1}') === null);
+  ok('so is a json file that is not ours',
+     w.Store.importJSON(JSON.stringify({ channels:[], cats:[] })) === null);
+  ok('and nothing was touched by either', w.Store.channels().length === before);
+}
+click($('#sheet-set [data-close]'));
+await tick();
+
 console.log('\nkeys');
 d.dispatchEvent(new w.KeyboardEvent('keydown', { key:'n', bubbles:true }));
 await tick();

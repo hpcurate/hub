@@ -6,8 +6,11 @@
 
 :host{ all:initial }
 
+/* Top centre, where it is asked for: YouTube's own masthead is the one strip
+   of a channel page that is always the same, and a button under it is in the
+   same place whatever the page is doing further down. */
 .btn{
-  position:fixed;right:22px;bottom:22px;z-index:2147483647;
+  position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:2147483647;
   display:flex;align-items:center;gap:8px;
   height:38px;padding:0 16px;cursor:pointer;
   background:#A78BFA;border:1px solid #A78BFA;border-radius:19px;
@@ -17,9 +20,10 @@
   animation:rise .3s cubic-bezier(.34,1.4,.5,1);
   transition:transform .12s cubic-bezier(.4,0,.2,1),filter .12s cubic-bezier(.4,0,.2,1);
 }
-@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes rise{from{opacity:0;transform:translate(-50%,-10px)}
+                 to{opacity:1;transform:translateX(-50%)}}
 .btn:hover{filter:brightness(1.08)}
-.btn:active{transform:translateY(1px)}
+.btn:active{transform:translate(-50%,1px)}
 
 /* Added, and already on the board. Both say so in place rather than moving
    anything — the button is on someone else's page and should not take over it. */

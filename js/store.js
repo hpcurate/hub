@@ -14,7 +14,8 @@
 const Store = (() => {
 
   const { KEYS, PALETTE, DEFAULT_UI, uid,
-          normUrl, nameFromUrl, makeChannel, fillChannel, fillCat, seedCats } = HubModel;
+          normUrl, nameFromUrl, makeChannel, fillChannel, fillCat, seedCats,
+          buildExport, readExport } = HubModel;
 
   /* chrome.storage.local, or nothing. `chrome` exists in places that cannot
      store anything, so the capability is what gets tested, not the namespace. */
@@ -24,6 +25,7 @@ const Store = (() => {
   })();
 
   let channels = [], cats = [], ui = { ...DEFAULT_UI };
+  let migrated = false;                             /* carried over from localStorage */
   const listeners = new Set();
 
   /* Our own writes come back through the change listener. Remembering what we
@@ -74,8 +76,35 @@ const Store = (() => {
 
   const announce = () => listeners.forEach(fn => { try { fn() } catch {} });
 
+  /* ── Coming across from localStorage ───────────────────────────────────────
+     v0.3.0 moved the extension's storage from localStorage to
+     chrome.storage.local, because a service worker has no localStorage and the
+     "+ add" button writes through one. A board that had channels in the old
+     place would have opened empty, which is not an acceptable way for an update
+     to behave — so the old place is read once, on a cold start, and carried
+     over. It never overwrites: this only ever runs when the new store is empty. */
+  function localBag(){
+    const bag = {};
+    for (const k of Object.values(KEYS)){
+      try { bag[k] = localStorage.getItem(k) } catch { bag[k] = null }
+    }
+    return bag;
+  }
+
   const ready = (async () => {
-    const seed = adopt(await readAll());
+    let seed = adopt(await readAll());
+
+    if (area && seed && !channels.length){
+      const old = localBag();
+      if (old[KEYS.CH] || old[KEYS.CAT]){
+        seed = adopt(old);
+        save(KEYS.CH, channels);
+        save(KEYS.UI, ui);
+        if (!seed) saveCat();
+        migrated = true;
+      }
+    }
+
     if (seed){ cats = seedCats(); saveCat() }
   })();
 
@@ -97,6 +126,22 @@ const Store = (() => {
   return {
     ready, PALETTE,
     onChange(fn){ listeners.add(fn); return () => listeners.delete(fn) },
+    migrated: () => migrated,
+
+    /* ── Export / import ───────────────────────────────────────────────────
+       The other half of "remember my data when it updates": whatever the
+       storage does underneath, a file you hold is a copy nothing can take. */
+    exportJSON: () => JSON.stringify(buildExport(channels, cats, ui), null, 2),
+
+    importJSON(text){
+      const d = readExport(text);
+      if (!d) return null;
+      channels = d.channels;
+      cats = d.cats.length ? d.cats : seedCats();
+      ui = d.ui;
+      saveCh(); saveCat(); saveUi();
+      return { channels:channels.length, cats:cats.length };
+    },
 
     /* ── Reads ─────────────────────────────────────────────────────────── */
     channels: () => channels.slice(),
@@ -140,8 +185,8 @@ const Store = (() => {
     },
 
     /* ── Categories ────────────────────────────────────────────────────── */
-    addCat(name, color){
-      const c = { id:uid(), order:cats.length,
+    addCat(name, color, icon){
+      const c = { id:uid(), order:cats.length, icon: icon || '',
                   name:(name || '').trim() || 'untitled',
                   color: color || PALETTE[cats.length % PALETTE.length] };
       cats.push(c); saveCat();
@@ -153,6 +198,7 @@ const Store = (() => {
       if (!c) return null;
       if (patch.name  !== undefined) c.name  = patch.name.trim() || c.name;
       if (patch.color !== undefined) c.color = patch.color;
+      if (patch.icon  !== undefined) c.icon  = patch.icon || '';
       saveCat();
       return c;
     },

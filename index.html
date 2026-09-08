@@ -176,6 +176,15 @@
       </div>
     </div>
 
+    <div class="row">
+      <span class="row-k">content width</span>
+      <p class="row-s">how wide the board is allowed to get. an ultrawide does not want the whole screen.</p>
+      <div class="width-pick">
+        <input type="range" id="s-width" min="880" max="2600" step="40">
+        <output id="s-width-v"></output>
+      </div>
+    </div>
+
     <div class="togs">
       <button type="button" class="tog" data-ui="showHeat"><span>show the heat line</span><b></b></button>
       <button type="button" class="tog" data-ui="showCounts"><span>show click counts</span><b></b></button>
@@ -185,12 +194,27 @@
       </button>
     </div>
 
+    <div class="row">
+      <span class="row-k">your data</span>
+      <p class="row-s" id="s-data-note">a file you hold is a copy nothing can take. import replaces everything on this board.</p>
+      <div class="data-acts">
+        <button type="button" class="btn btn-s" id="s-export">export</button>
+        <button type="button" class="btn btn-s" id="s-import">import</button>
+        <input type="file" id="s-file" accept="application/json,.json" hidden>
+        <span class="data-said" id="s-said"></span>
+      </div>
+    </div>
+
     <div class="sh-acts">
       <span class="grow"></span>
       <button type="button" class="btn" data-close>done</button>
     </div>
   </div>
 </section>
+
+<!-- The quick-categorise menu, anchored to whichever card's tag was clicked.
+     One element reused, because only one can be open. -->
+<div class="qmenu" id="qmenu" hidden></div>
 
 <script src="ext/scope.js"></script>
 <script src="ext/model.js"></script>

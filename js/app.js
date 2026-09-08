@@ -23,6 +23,20 @@ let sort = ui.sort;
 let size = ui.size;
 let picked = new Set();          /* empty = every category */
 
+/* A category's icon, as an <svg> that inherits the colour of whatever it is
+   drawn inside. An unknown key draws nothing rather than a broken glyph, which
+   is what makes the icon set safe to change later. */
+function iconEl(key){
+  const markup = HubModel.ICONS[key];
+  if (!markup) return null;
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('class', 'ico');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.innerHTML = markup;
+  return svg;
+}
+
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const D = n => REDUCED ? 0 : n;
 
@@ -99,7 +113,7 @@ function build(ch){
     '<div class="card-top"><h3 class="card-name"></h3>' +
       '<button class="card-edit" title="Edit">\u22ef</button></div>' +
     '<p class="card-desc"></p>' +
-    '<div class="card-foot"><span class="tag"></span>' +
+    '<div class="card-foot"><button class="tag" type="button" title="Categorise"></button>' +
       '<span class="count"></span><span class="seen"></span></div>' +
     '<span class="heat"></span>';
 
@@ -120,6 +134,14 @@ function build(ch){
   el.querySelector('.card-edit').addEventListener('click', e => {
     e.preventDefault(); e.stopPropagation();
     openChannel(ch.id);
+  });
+
+  /* Quick categorise: the tag is the control for the thing it names. Filing a
+     channel should not need the edit pane — especially since anything added by
+     the "+ add" button on YouTube arrives with no category at all. */
+  el.querySelector('.tag').addEventListener('click', e => {
+    e.preventDefault(); e.stopPropagation();
+    openQuick(ch.id, e.currentTarget);
   });
   return el;
 }
@@ -177,8 +199,12 @@ function paint(el, ch){
   d.classList.toggle('none', !ch.desc);
 
   const t = el.querySelector('.tag');
-  t.textContent = cat ? cat.name : 'uncategorised';
+  t.textContent = '';
+  const ic = cat && iconEl(cat.icon);
+  if (ic) t.appendChild(ic);
+  t.appendChild(document.createTextNode(cat ? cat.name : 'uncategorised'));
   t.classList.toggle('none', !cat);
+  t.classList.toggle('has-icon', !!ic);
 
   const n = el.querySelector('.count');
   n.textContent = (ch.clicks || 0) + (ch.clicks === 1 ? ' open' : ' opens');
@@ -286,6 +312,9 @@ function renderChips(){
     b.className = 'chip' + (picked.has(c.id) ? ' on' : '');
     b.style.setProperty('--c', c.color);
     b.innerHTML = '<span class="t"></span><span class="n"></span>';
+    const ic = iconEl(c.icon);
+    if (ic) b.insertBefore(ic, b.firstChild);
+    b.classList.toggle('has-icon', !!ic);
     b.querySelector('.t').textContent = c.name;
     b.querySelector('.n').textContent = n;
     b.addEventListener('click', () => { toggle(c.id); render() });
@@ -473,14 +502,62 @@ function swatches(current, onPick){
   return wrap;
 }
 
+/* Which row has its icon grid open. One at a time: twenty-one buttons is a
+   panel, not a control, and five of them open at once is the sheet. */
+let openIconFor = null;
+
+/* The grid of twenty, plus none. It draws under the row it belongs to, so the
+   choice and the thing being chosen for are never far apart. */
+function iconGrid(cat){
+  const g = document.createElement('div');
+  g.className = 'icon-grid';
+  g.style.setProperty('--c', cat.color);
+
+  const cell = (key, label) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'ic-b' + (cat.icon === key ? ' on' : '');
+    b.title = label;
+    const ic = iconEl(key);
+    if (ic) b.appendChild(ic); else b.textContent = 'none';
+    b.addEventListener('click', () => {
+      Store.updateCat(cat.id, { icon:key });
+      openIconFor = null;
+      renderCats(); render();
+    });
+    return b;
+  };
+
+  g.appendChild(cell('', 'No icon'));
+  HubModel.ICON_KEYS.forEach(k => g.appendChild(cell(k, k)));
+  return g;
+}
+
 function renderCats(){
   const box = $('#cat-list');
   box.textContent = '';
 
   Store.cats().forEach(c => {
+    const wrap = document.createElement('div');
+    wrap.className = 'cat-wrap';
+
     const r = document.createElement('div');
     r.className = 'cat-r';
     r.style.setProperty('--c', c.color);
+
+    /* The icon comes before the colour, because it is the thing you read on a
+       card first. */
+    const ib = document.createElement('button');
+    ib.type = 'button';
+    ib.className = 'cat-ico' + (c.icon ? ' on' : '') + (openIconFor === c.id ? ' open' : '');
+    ib.title = 'Icon';
+    const cur = iconEl(c.icon);
+    if (cur) ib.appendChild(cur); else ib.textContent = '—';
+    ib.addEventListener('click', () => {
+      openIconFor = openIconFor === c.id ? null : c.id;
+      renderCats();
+    });
+    r.appendChild(ib);
 
     r.appendChild(swatches(c.color, hex => {
       Store.updateCat(c.id, { color:hex });
@@ -521,7 +598,9 @@ function renderCats(){
     });
     r.appendChild(x);
 
-    box.appendChild(r);
+    wrap.appendChild(r);
+    if (openIconFor === c.id) wrap.appendChild(iconGrid(c));
+    box.appendChild(wrap);
   });
 
   const sw = $('#n-sw');
@@ -540,9 +619,70 @@ $('#f-newcat').addEventListener('submit', e => {
   input.focus();
 });
 
-$('#btn-cats').addEventListener('click', () => { renderCats(); openSheet('cat') });
+$('#btn-cats').addEventListener('click', () => { openIconFor = null; renderCats(); openSheet('cat') });
 $('#btn-add').addEventListener('click', () => openChannel(null));
 $('#btn-set').addEventListener('click', () => { renderSettings(); openSheet('set') });
+
+/* ── Quick categorise ────────────────────────────────────────────────────────
+   A menu at the tag you clicked. One element, reused, because only one can be
+   open — and it closes on anything: a pick, a click elsewhere, Escape, a
+   scroll. A menu that outlives the thing it was anchored to is worse than no
+   menu at all. */
+const qmenu = $('#qmenu');
+let qFor = null;
+
+function closeQuick(){
+  if (!qFor) return;
+  qFor = null;
+  qmenu.hidden = true;
+  qmenu.textContent = '';
+}
+
+function openQuick(id, anchor){
+  const ch = Store.channels().find(c => c.id === id);
+  if (!ch) return;
+  const reopening = qFor === id;
+  closeQuick();
+  if (reopening) return;              /* clicking the same tag again shuts it */
+
+  qFor = id;
+  qmenu.textContent = '';
+
+  const pick = (catId, name, color, icon, on) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'qi' + (on ? ' on' : '');
+    b.style.setProperty('--c', color);
+    const ic = iconEl(icon);
+    if (ic) b.appendChild(ic);
+    b.appendChild(document.createTextNode(name));
+    b.addEventListener('click', () => {
+      Store.updateChannel(id, { cat:catId });
+      closeQuick();
+      render();
+    });
+    return b;
+  };
+
+  Store.cats().forEach(c =>
+    qmenu.appendChild(pick(c.id, c.name, c.color, c.icon, ch.cat === c.id)));
+  qmenu.appendChild(pick('', 'uncategorised', 'var(--mu)', '', !ch.cat));
+
+  qmenu.hidden = false;
+
+  /* Anchored under the tag, then pulled back inside the window if that would
+     put it off an edge. */
+  const r = anchor.getBoundingClientRect();
+  const w = qmenu.offsetWidth || 190, h = qmenu.offsetHeight || 200;
+  const left = Math.max(8, Math.min(r.left, innerWidth - w - 8));
+  const top = r.bottom + h + 8 > innerHeight ? Math.max(8, r.top - h - 6) : r.bottom + 6;
+  qmenu.style.left = left + 'px';
+  qmenu.style.top = top + 'px';
+}
+
+addEventListener('click', e => { if (!qmenu.contains(e.target)) closeQuick() });
+addEventListener('scroll', closeQuick, true);
+addEventListener('resize', closeQuick);
 
 /* Settings.
    Every control writes straight through and re-renders the board behind the
@@ -551,6 +691,8 @@ $('#btn-set').addEventListener('click', () => { renderSettings(); openSheet('set
 function renderSettings(){
   $('#s-heat-from').value = ui.heatFrom;
   $('#s-heat-to').value = ui.heatTo;
+  $('#s-width').value = ui.maxWidth || 2600;
+  $('#s-width-v').textContent = widthLabel(ui.maxWidth);
   $('#s-heat-prev').style.background =
     'linear-gradient(90deg,' + ui.heatFrom + ',' + ui.heatTo + ')';
 
@@ -559,6 +701,62 @@ function renderSettings(){
   /* Add mode only means something with a browser around it. */
   $('#s-addmode').hidden = !(typeof HubBridge !== 'undefined' && HubBridge.inExt);
 }
+
+/* The top of the range is "as wide as the window" rather than 2600px. An
+   ultrawide is wider than any number worth putting on a slider, so the end of
+   the track has to mean *off* or the setting cannot express it. */
+const WIDTH_FULL = 2600;
+const widthLabel = w => (!w || w >= WIDTH_FULL) ? 'full width' : w + 'px';
+
+function applyWidth(){
+  const w = ui.maxWidth;
+  document.documentElement.style.setProperty(
+    '--app-w', (!w || w >= WIDTH_FULL) ? 'none' : w + 'px');
+}
+
+$('#s-width').addEventListener('input', e => {
+  const v = +e.target.value;
+  ui = Store.setUi({ maxWidth: v >= WIDTH_FULL ? 0 : v });
+  $('#s-width-v').textContent = widthLabel(ui.maxWidth);
+  applyWidth();
+});
+
+/* ── Export and import ───────────────────────────────────────────────────── */
+const said = msg => { $('#s-said').textContent = msg;
+                      setTimeout(() => { if ($('#s-said').textContent === msg) $('#s-said').textContent = '' }, 4000) };
+
+$('#s-export').addEventListener('click', () => {
+  const blob = new Blob([Store.exportJSON()], { type:'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'hub-' + new Date().toISOString().slice(0, 10) + '.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  said('exported');
+});
+
+$('#s-import').addEventListener('click', () => $('#s-file').click());
+
+$('#s-file').addEventListener('change', async e => {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';                 /* so the same file can be picked twice */
+  if (!file) return;
+  let text;
+  try { text = await file.text() } catch { return said('could not read that file') }
+  const out = Store.importJSON(text);
+  if (!out) return said('that is not a hub export');
+  ui = Store.ui();
+  sort = ui.sort; size = ui.size;
+  sortSel.value = sort;
+  $$('#size .seg-b').forEach(b => b.classList.toggle('on', b.dataset.size === size));
+  picked.clear();
+  applyWidth();
+  renderSettings();
+  render();
+  said('imported ' + out.channels + ' channels, ' + out.cats + ' categories');
+});
 
 ['From', 'To'].forEach(end => {
   $('#s-heat-' + end.toLowerCase()).addEventListener('input', e => {
@@ -641,6 +839,7 @@ Store.onChange(() => { ui = Store.ui(); render() });
   sort = ui.sort; size = ui.size;
   sortSel.value = sort;
   $$('#size .seg-b').forEach(b => b.classList.toggle('on', b.dataset.size === size));
+  applyWidth();
   render();
 })();
 

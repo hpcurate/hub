@@ -32,7 +32,43 @@ const HubModel = (() => {
     heatFrom:'#3a3a3a', heatTo:'#A78BFA',
     showHeat:true, showCounts:false, hideEmpty:false,
     addMode:false,
+    /* 0 is "as wide as the window". Anything else is a pixel measure, which is
+       what an ultrawide needs: the board reflows to any width, but a board four
+       thousand pixels across is a wall, not a page. */
+    maxWidth:1560,
   };
+
+  /* ── Category icons ────────────────────────────────────────────────────────
+     Twenty, plus none. Inner SVG markup rather than a font or a sprite, so
+     there is nothing to load and they inherit currentColor — which is the
+     category's own colour wherever they are drawn. Stroke-only and on the same
+     24-unit grid, so they sit at any size without going soft.
+
+     They are drawn with innerHTML, which is safe because this object is the
+     only source: an icon is a key, and a key that is not in here draws nothing. */
+  const ICONS = {
+    play:   '<path d="M9 6l10 6-10 6z"/>',
+    music:  '<circle cx="7" cy="18" r="2.5"/><circle cx="18" cy="16" r="2.5"/><path d="M9.5 18V6l11-2v12"/>',
+    code:   '<path d="M9 7l-5 5 5 5M15 7l5 5-5 5"/>',
+    book:   '<path d="M4 5a2 2 0 0 1 2-2h12v16H6a2 2 0 0 0-2 2z"/><path d="M18 17H6"/>',
+    tool:   '<path d="M17 3a5 5 0 0 0-4.6 7L4 18.4 5.6 20l8.4-8.4A5 5 0 0 0 21 7l-3 3-2-2z"/>',
+    camera: '<path d="M3 8h4l1.5-2h7L17 8h4v11H3z"/><circle cx="12" cy="13" r="3.5"/>',
+    game:   '<rect x="3" y="8" width="18" height="10" rx="4"/><path d="M8 11v4M6 13h4M16 12h.01M18 15h.01"/>',
+    chip:   '<rect x="7" y="7" width="10" height="10" rx="1"/><path d="M10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4"/>',
+    flask:  '<path d="M10 3v6L4 19a2 2 0 0 0 2 3h12a2 2 0 0 0 2-3l-6-10V3"/><path d="M9 3h6"/>',
+    art:    '<path d="M12 3a9 9 0 1 0 0 18 2 2 0 0 0 1.6-3.2 2 2 0 0 1 1.6-3.2H18a3 3 0 0 0 3-3A9 9 0 0 0 12 3z"/><circle cx="8" cy="10" r="1"/><circle cx="12" cy="7.5" r="1"/><circle cx="16" cy="10" r="1"/>',
+    lift:   '<path d="M3 9v6M6 7v10M18 7v10M21 9v6M6 12h12"/>',
+    plane:  '<path d="M21 15l-9-4V5a1.5 1.5 0 0 0-3 0v6l-9 4v2l9-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L12 19v-4.5L21 17z"/>',
+    food:   '<path d="M6 3v8a2 2 0 0 0 4 0V3M8 11v10"/><path d="M17 3c-1.5 2-2 4-2 6s.7 3 2 3v9"/>',
+    car:    '<path d="M3 17v-4l2-5h14l2 5v4z"/><path d="M5 17v2h3v-2M16 17v2h3v-2"/><circle cx="8" cy="14" r="1"/><circle cx="16" cy="14" r="1"/>',
+    leaf:   '<path d="M4 20c0-9 6-14 16-14 0 10-5 15-13 15-1 0-3-.5-3-1z"/><path d="M9 15c2-3 5-5 8-6"/>',
+    home:   '<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/>',
+    star:   '<path d="M12 3l2.8 5.7 6.2.9-4.5 4.4 1 6.2-5.5-2.9L6.5 20l1-6.2L3 9.6l6.2-.9z"/>',
+    heart:  '<path d="M12 20S3 14.5 3 8.8A4.8 4.8 0 0 1 12 6a4.8 4.8 0 0 1 9 2.8C21 14.5 12 20 12 20z"/>',
+    globe:  '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 3 2.5 15 0 18-2.5-3-2.5-15 0-18z"/>',
+    bolt:   '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>',
+  };
+  const ICON_KEYS = Object.keys(ICONS);
 
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
@@ -76,12 +112,39 @@ const HubModel = (() => {
      Filling them in on read rather than migrating on write means an old board
      opened in a new build is simply correct, with nothing to run first. */
   const fillChannel = c => ({ clicks:0, seen:null, desc:'', cat:'', ...c });
-  const fillCat = (c, i) => ({ order:i, ...c });
+  const fillCat = (c, i) => ({ order:i, icon:'', ...c });
 
   const seedCats = () => DEFAULT_CATS.map((c, i) => ({ id:uid(), order:i, ...c }));
 
-  return { KEYS, PALETTE, DEFAULT_CATS, DEFAULT_UI, uid,
-           normUrl, nameFromUrl, makeChannel, fillChannel, fillCat, seedCats };
+  /* ── Export ────────────────────────────────────────────────────────────────
+     One file, all three keys, stamped. `kind` is what an import checks before
+     it replaces anything — a JSON file that happens to have the right-looking
+     fields is not the same as a file this wrote. */
+  const EXPORT_KIND = 'hub.export';
+
+  const buildExport = (channels, cats, ui) => ({
+    kind: EXPORT_KIND, version: 1, at: new Date().toISOString(),
+    channels, cats, ui,
+  });
+
+  /* Returns { channels, cats, ui } or null. Deliberately forgiving about what
+     is inside — an old export missing a field is still worth restoring — and
+     unforgiving about what the file is. */
+  function readExport(text){
+    let d;
+    try { d = JSON.parse(text) } catch { return null }
+    if (!d || d.kind !== EXPORT_KIND) return null;
+    if (!Array.isArray(d.channels) || !Array.isArray(d.cats)) return null;
+    return {
+      channels: d.channels.map(fillChannel),
+      cats: d.cats.map(fillCat).sort((a, b) => a.order - b.order),
+      ui: { ...DEFAULT_UI, ...(d.ui && typeof d.ui === 'object' ? d.ui : {}) },
+    };
+  }
+
+  return { KEYS, PALETTE, DEFAULT_CATS, DEFAULT_UI, ICONS, ICON_KEYS, uid,
+           normUrl, nameFromUrl, makeChannel, fillChannel, fillCat, seedCats,
+           EXPORT_KIND, buildExport, readExport };
 })();
 
 if (typeof globalThis !== 'undefined') globalThis.HubModel = HubModel;

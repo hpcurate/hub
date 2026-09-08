@@ -27,7 +27,25 @@ const CHANNEL = { id:'c1', url:'https://www.youtube.com/@keep', name:'@keep',
                   desc:'', cat:'', added:1, seen:null, clicks:0 };
 const BLOCKED_FROM = 'https://www.youtube.com/feed/subscriptions';
 
-async function boot({ blocked = false, withChrome = true } = {}){
+/* A chrome.storage.local stand-in: a plain object behind the two methods the
+   store uses, so what ends up in it can be read back by the test. */
+function fakeArea(seed = {}){
+  const bag = { ...seed };
+  return {
+    bag,
+    api: {
+      local: {
+        get: keys => Promise.resolve(Object.fromEntries(
+          (Array.isArray(keys) ? keys : Object.keys(keys)).map(k => [k, bag[k]]))),
+        set: obj => { Object.assign(bag, obj); return Promise.resolve() },
+      },
+      session: { get: () => Promise.resolve({}), set: () => Promise.resolve() },
+      onChanged: { addListener(){} },
+    },
+  };
+}
+
+async function boot({ blocked = false, withChrome = true, storage = null, seedLocal = true } = {}){
   const errors = [];
   const vc = new VirtualConsole();
   vc.on('jsdomError', e => errors.push(String(e.detail?.message || e.message)));
@@ -40,7 +58,7 @@ async function boot({ blocked = false, withChrome = true } = {}){
     pretendToBeVisual:true, virtualConsole:vc,
     beforeParse(w){
       w.matchMedia = () => ({ matches:false, addEventListener(){}, removeEventListener(){}, addListener(){} });
-      w.localStorage.setItem('hub.channels.v1', JSON.stringify([CHANNEL]));
+      if (seedLocal) w.localStorage.setItem('hub.channels.v1', JSON.stringify([CHANNEL]));
       if (withChrome) w.chrome = {
         runtime: {
           id:'test-extension', lastError:undefined,
@@ -48,6 +66,7 @@ async function boot({ blocked = false, withChrome = true } = {}){
           sendMessage(msg, cb){ sent.push(msg); setTimeout(() => cb({ ok:true, guarding:true }), 0) },
         },
         tabs: { create(){} },
+        storage: storage ? storage.api : undefined,
       };
       w.addEventListener('message', e => posted.push(e.data));
     },
@@ -153,6 +172,41 @@ console.log('\nwhen the background will not grant');
   clickCard(t.w);
   await wait(40);
   ok('the tab is not sent anywhere it would only bounce off', !t.navigated());
+  t.dom.window.close();
+}
+
+console.log('\ncoming across from localStorage');
+{
+  // v0.3.0 moved the extension's storage. A board that had channels in the old
+  // place must not open empty because of an update.
+  const store = fakeArea();
+  const t = await boot({ withChrome:true, storage:store });
+  ok('the old board is read out of localStorage',
+     t.w.eval('Store.channels().length') === 1);
+  ok('and the store says it carried it over', t.w.eval('Store.migrated()') === true);
+  ok('it is written into the new place',
+     JSON.parse(store.bag['hub.channels.v1']).length === 1, JSON.stringify(store.bag));
+  ok('categories came with it', t.w.eval('Store.cats().length') === 5);
+  ok('and the board actually shows it', t.w.document.querySelectorAll('#grid .card').length === 1);
+  t.dom.window.close();
+}
+{
+  const other = { id:'c9', url:'https://www.youtube.com/@already', name:'@already',
+                  desc:'', cat:'', added:2, seen:null, clicks:0 };
+  const store = fakeArea({ 'hub.channels.v1': JSON.stringify([other]) });
+  const t = await boot({ withChrome:true, storage:store });
+  ok('a store that already has channels is left alone',
+     t.w.eval('Store.channels()[0].name') === '@already');
+  ok('nothing is reported as carried over', t.w.eval('Store.migrated()') === false);
+  ok('and localStorage is not merged in on top', t.w.eval('Store.channels().length') === 1);
+  t.dom.window.close();
+}
+{
+  const store = fakeArea();
+  const t = await boot({ withChrome:true, storage:store, seedLocal:false });
+  ok('a genuinely new board just seeds its categories', t.w.eval('Store.cats().length') === 5);
+  ok('with no channels', t.w.eval('Store.channels().length') === 0);
+  ok('and nothing claimed to be migrated', t.w.eval('Store.migrated()') === false);
   t.dom.window.close();
 }
 

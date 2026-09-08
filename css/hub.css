@@ -18,7 +18,10 @@ button{cursor:pointer;background:none;border:none;padding:0}
 
 /* The board is a desktop window, so it gets a real max measure rather than
    running to the edge of a 34" screen. */
-.app{max-width:1560px;margin:0 auto;padding:0 26px 80px}
+/* --app-w is written by the renderer from the Content width setting. An
+   ultrawide is wider than any measure a page wants to be, so this is a real
+   dial rather than a number picked once here. `none` is the whole window. */
+.app{max-width:var(--app-w,1560px);margin:0 auto;padding:0 26px 80px}
 
 /* ── Title band ──────────────────────────────────────────────────────────────
    ROOT's shape: label line, then the wordmark, with the primary action pinned
@@ -450,3 +453,106 @@ input[type="color"]::-moz-color-swatch{border:none;border-radius:2px}
    must stay reachable. */
 html.blocked .bar{position:static}
 html.blocked .h-top{padding-top:22px}
+
+/* ── Category icons ──────────────────────────────────────────────────────────
+   currentColor everywhere, so one icon is the category's colour on a card, on a
+   chip, and in the quick menu without any of them being told which colour. */
+.ico{
+  width:1.05em;height:1.05em;flex:0 0 auto;
+  fill:none;stroke:currentColor;stroke-width:2;
+  stroke-linecap:round;stroke-linejoin:round;
+  vertical-align:-.16em;
+}
+
+/* The tag is a control now — it is the quick way to file a channel — so it
+   takes pointer events back from the card and looks pressable on hover. */
+.card .tag{
+  pointer-events:auto;cursor:pointer;
+  padding:3px 6px;margin:-3px -6px;border-radius:var(--r1);
+  transition:background var(--dur-1) var(--ease);
+}
+.card .tag:hover{background:var(--s2)}
+.card .tag.has-icon::before{display:none}
+.chip.has-icon::before{display:none}
+.chip .ico{margin-right:-1px}
+
+/* ── Quick categorise ───────────────────────────────────────────────────── */
+.qmenu{
+  position:fixed;z-index:35;
+  min-width:172px;max-height:min(60vh,360px);overflow:auto;
+  padding:5px;
+  background:var(--s1);border:var(--bw) solid var(--bd-2);border-radius:var(--r2);
+  box-shadow:var(--shadow-chrome);
+  animation:card-in calc(.16s * var(--mo)) var(--ease-out);
+}
+.qi{
+  --c:var(--tx-2);
+  display:flex;align-items:center;gap:8px;width:100%;padding:7px 9px;text-align:left;
+  border-radius:var(--r1);color:var(--c);
+  font:500 11.5px/1 var(--mono);letter-spacing:.04em;
+  transition:background var(--dur-1) var(--ease);
+}
+.qi:hover{background:var(--s2)}
+.qi.on{background:color-mix(in srgb,var(--c) 13%,transparent)}
+.qi::after{
+  content:'';margin-left:auto;width:6px;height:6px;border-radius:var(--r-pill);
+  background:var(--c);opacity:0;
+}
+.qi.on::after{opacity:1}
+
+/* ── The icon picker, under its category row ────────────────────────────── */
+.cat-wrap{display:flex;flex-direction:column;gap:5px}
+.cat-ico{
+  flex:0 0 auto;display:flex;align-items:center;justify-content:center;
+  width:26px;height:26px;border-radius:var(--r1);
+  background:var(--s1);border:var(--bw) solid var(--bd);
+  color:var(--mu);font:500 11px/1 var(--mono);
+  transition:border-color var(--dur-1) var(--ease),color var(--dur-1) var(--ease),
+             background var(--dur-1) var(--ease);
+}
+.cat-ico .ico{width:15px;height:15px}
+.cat-ico.on{color:var(--c);border-color:color-mix(in srgb,var(--c) 40%,var(--bd))}
+.cat-ico:hover{border-color:var(--bd-2)}
+.cat-ico.open{background:var(--s2);border-color:var(--y)}
+
+.icon-grid{
+  display:grid;grid-template-columns:repeat(7,1fr);gap:4px;
+  padding:8px;margin-bottom:2px;
+  background:var(--bg);border:var(--bw) solid var(--bd-2);border-radius:var(--r1);
+  animation:card-in calc(.18s * var(--mo)) var(--ease-out);
+}
+.ic-b{
+  display:flex;align-items:center;justify-content:center;
+  height:30px;border-radius:var(--r1);
+  color:var(--tx-2);font:500 9px/1 var(--mono);letter-spacing:.06em;
+  border:var(--bw) solid transparent;
+  transition:background var(--dur-1) var(--ease),color var(--dur-1) var(--ease),
+             border-color var(--dur-1) var(--ease);
+}
+.ic-b .ico{width:17px;height:17px}
+.ic-b:hover{background:var(--s2);color:var(--tx)}
+.ic-b.on{color:var(--c);border-color:color-mix(in srgb,var(--c) 46%,transparent);
+         background:color-mix(in srgb,var(--c) 10%,transparent)}
+
+/* ── Width and data, in settings ────────────────────────────────────────── */
+.width-pick{display:flex;align-items:center;gap:12px}
+.width-pick output{
+  flex:0 0 auto;min-width:74px;text-align:right;
+  font:500 11px/1 var(--mono);letter-spacing:.08em;color:var(--tx)}
+input[type="range"]{
+  -webkit-appearance:none;appearance:none;
+  flex:1;height:16px;background:none;cursor:pointer;
+}
+input[type="range"]::-webkit-slider-runnable-track{
+  height:3px;border-radius:var(--r-pill);background:var(--s2);border:var(--bw) solid var(--bd)}
+input[type="range"]::-moz-range-track{
+  height:3px;border-radius:var(--r-pill);background:var(--s2);border:var(--bw) solid var(--bd)}
+input[type="range"]::-webkit-slider-thumb{
+  -webkit-appearance:none;appearance:none;margin-top:-6px;
+  width:14px;height:14px;border-radius:var(--r-pill);background:var(--y);border:none}
+input[type="range"]::-moz-range-thumb{
+  width:14px;height:14px;border-radius:var(--r-pill);background:var(--y);border:none}
+
+.data-acts{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.data-said{
+  font:500 10px/1.4 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--gr)}

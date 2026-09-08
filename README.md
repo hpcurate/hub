@@ -10,9 +10,12 @@ motion tokens, Grotesk for titles and JetBrains Mono for everything else.
 - **Channels** — a name, a YouTube URL, a description, a category. Leave the
   name blank and it is taken from the URL.
 - **Categories** — five to start with, all renamable, reorderable, deletable,
-  and any colour you like, not just the ten presets. Deleting one never deletes
-  its channels; they fall back to uncategorised. Empty ones can be kept out of
-  the filter bar.
+  and any colour you like, not just the ten presets. Each can carry one of
+  twenty icons, or none, which then shows on every card and filter chip.
+  Deleting one never deletes its channels; they fall back to uncategorised.
+  Empty ones can be kept out of the filter bar.
+- **Quick categorise** — click the category tag on any card and pick from a
+  menu. No pane, no form; it is how a channel added from YouTube gets filed.
 - **Colour coding** — a category's colour is its spine down the left of every
   card, its dot on the filter chip, and a faint wash across the tile.
 - **Sort** — last viewed, longest unwatched, recently added, name, category,
@@ -27,7 +30,10 @@ motion tokens, Grotesk for titles and JetBrains Mono for everything else.
   time. The card then says how long ago that was, and it is a sort order.
 - **Size** — S / M / L moves the grid's minimum column width. The columns
   themselves always divide the window, so the board fills whatever it is opened
-  in.
+  in — up to the **content width** set in settings, which is what keeps it from
+  running the full span of an ultrawide.
+- **Export / import** — one JSON file with every channel, category and setting.
+  Import replaces the board.
 
 Keys: `/` search · `n` new channel · `Esc` close.
 
@@ -71,18 +77,17 @@ see the address of any other page you have open. Settings live in
 `chrome.storage.local`; which channel a tab is on lives in
 `chrome.storage.session` and is gone when the browser closes.
 
-### One thing to know about storage
+### Keeping your data
 
-The board off disk (`file://`) and the board inside the extension are different
-origins, so they keep different channel lists. Once the extension is installed,
-its board is the one to use. To carry existing channels across, open the old
-page, run this in its console, then run the printed line in the extension's
-board:
+Updating the extension does not clear it: `chrome.storage.local` survives a
+reload of the unpacked folder, and v0.3.0's move out of `localStorage` is
+carried over automatically the first time a board with the new code opens an
+empty store.
 
-```js
-copy('localStorage.setItem("hub.cats.v1",' + JSON.stringify(localStorage.getItem('hub.cats.v1'))
-  + ');localStorage.setItem("hub.channels.v1",' + JSON.stringify(localStorage.getItem('hub.channels.v1')) + ');location.reload()')
-```
+That leaves one real gap, which is the board off disk (`file://`): it is a
+different origin from the extension and always has been, so the two keep
+different lists. **Export** from one and **import** into the other, in settings.
+That file is also the backup — a copy you hold is the only one nothing can take.
 
 ## Where it keeps things
 
