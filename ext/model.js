@@ -37,9 +37,27 @@ const HubModel = (() => {
        dial here moves the system rather than one rule. */
     accent:'#A78BFA', radius:4, motion:1,
 
+    /* Layout. `layout` is the shape of a card, the rest are where things sit
+       inside it. Presets in settings set several of these at once; every one of
+       them is still a dial on its own afterwards. */
+    layout:'card',            /* card | compact | list */
+    avatarPos:'left',         /* left | top */
+    avatarSize:30,
+    badgePos:'bottom',        /* bottom | top */
+    nameLines:2,
+    gap:12,
+    border:'hairline',        /* hairline | none | accent */
+    surface:'raised',         /* raised | flat */
+
     /* What a card shows. Off is a real answer for every one of them. */
     showAvatars:true, avatarShape:'circle', showDesc:true, descLines:4,
     showTag:true, showSeen:true, showNew:true,
+
+    /* The rest of the badges. Off by default: a card that says nine things
+       says nothing, and these are the ones you would go looking for rather
+       than the ones you read at a glance. */
+    showPosted:false, showAdded:false, showRank:false,
+    showQueued:false, showHandle:false,
 
     /* Board behaviour. */
     enterOpens:true, newTab:true,

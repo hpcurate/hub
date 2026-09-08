@@ -116,11 +116,11 @@ ok('the card carries the category colour',
 ok('the empty state is gone', $('#empty').hidden);
 
 console.log('\ntime since last viewed');
-ok('a new channel reads as never viewed', $('#grid .card .seen').textContent === 'never');
+ok('a new channel reads as never viewed', $('#grid .card .b-seen').textContent === 'never');
 click($('#grid .card .card-hit'));
 await tick();
 ok('clicking the card stamps a view', typeof w.Store.channels()[0].seen === 'number');
-ok('the card now reads just now', $('#grid .card .seen').textContent === 'just now');
+ok('the card now reads just now', $('#grid .card .b-seen').textContent === 'just now');
 ok('the stamp was persisted',
    JSON.parse(w.localStorage.getItem('hub.channels.v1'))[0].seen !== null);
 
@@ -263,12 +263,10 @@ console.log('\nclick heat');
   await tick();
   ok('most clicked sorts the most opened first',
      $$('#grid .card .card-name').map(e => e.textContent)[0] === 'aardvark');
-  ok('the count is on the card',
-     $$('#grid .card').find(c => c.querySelector('.card-name').textContent === 'aardvark')
-       .querySelector('.count').textContent === '3 opens');
-  ok('one open is not "1 opens"',
-     $$('#grid .card').find(c => c.querySelector('.card-name').textContent !== 'aardvark')
-       .querySelector('.count').textContent === '1 open');
+  /* A badge that is switched off is not on the card at all now, rather than on
+     it and hidden. Its text is checked in the settings section, once it is on. */
+  ok('a badge that is off is not in the card',
+     !$('#grid .card .b-count'));
 
   /* jsdom serialises rgb() without the spaces a browser keeps, so the two are
      compared with whitespace out of the way rather than by exact string. */
@@ -291,11 +289,18 @@ ok('the controls are built from the list', $$('#set-body .set-r').length > 10,
    String($$('#set-body .set-r').length));
 ok('and grouped into sections', $$('#set-body .set-h').length >= 3);
 
-ok('click counts are off by default', $('#grid').classList.contains('no-counts'));
+ok('click counts are off by default', !$('#grid .card .b-count'));
 click($('#set-body [data-k="showCounts"]'));
 await tick();
-ok('the toggle turns them on', !$('#grid').classList.contains('no-counts'));
+ok('the toggle puts the badge on the card', !!$('#grid .card .b-count'));
 ok('and it is remembered', JSON.parse(w.localStorage.getItem('hub.ui.v1')).showCounts === true);
+ok('the count reads right',
+   $$('#grid .card').find(c => c.querySelector('.card-name').textContent === 'aardvark')
+     .querySelector('.b-count').textContent === '3 opens',
+   $('#grid .card .b-count').textContent);
+ok('one open is not "1 opens"',
+   $$('#grid .card').find(c => c.querySelector('.card-name').textContent !== 'aardvark')
+     .querySelector('.b-count').textContent === '1 open');
 
 click($('#set-body [data-k="showHeat"]'));
 await tick();
@@ -585,6 +590,161 @@ console.log('\n the queue');
   click($('#sheet-q [data-close]'));
   await tick();
 }
+
+console.log('\nthe colour picker staying open');
+click($('#btn-cats'));
+await tick();
+{
+  const well = $('#cat-list .cat-r .sw-any input[type="color"]');
+  ok('a category row has a colour well', !!well);
+
+  /* The bug: a native colour dialog fires input on every drag, and the row
+     redrew itself on the first one - replacing the element the dialog belonged
+     to, which shut it. Nothing on screen may be rebuilt while it is open, so
+     the same element has to still be there afterwards. */
+  well.value = '#112233';
+  well.dispatchEvent(new w.Event('input', { bubbles:true }));
+  await tick();
+  ok('the well is still the same element after an input',
+     $('#cat-list .cat-r .sw-any input[type="color"]') === well);
+  ok('and it kept its value', well.value === '#112233');
+  ok('the colour was applied anyway', w.Store.cats()[0].color === '#112233',
+     w.Store.cats()[0].color);
+
+  well.value = '#445566';
+  well.dispatchEvent(new w.Event('change', { bubbles:true }));
+  await tick();
+  ok('closing the dialog commits', w.Store.cats()[0].color === '#445566');
+
+  const preset = $$('#cat-list .cat-r .sw')[2];
+  preset.dispatchEvent(new w.MouseEvent('click', { bubbles:true }));
+  await tick();
+  ok('a preset swatch still redraws the row', w.Store.cats()[0].color === w.Store.PALETTE[2]);
+}
+click($('#sheet-cat [data-close]'));
+await tick();
+
+console.log('\ncategorise mode');
+{
+  const target = w.Store.cats()[3];
+  const id = $$('#grid .card')[0].dataset.id;
+  ok('the board is not in it to begin with', $('#catbar').hidden);
+
+  click($('#btn-catmode'));
+  await tick();
+  ok('the toggle opens the strip', !$('#catbar').hidden);
+  ok('and the page says which mode it is in', d.documentElement.classList.contains('cat-mode'));
+  ok('every category is offered, plus uncategorised',
+     $$('#cb-pick .chip').length === w.Store.cats().length + 1);
+  ok('one is already chosen', $$('#cb-pick .chip.on').length === 1);
+
+  click([...$('#cb-pick').children].find(b => b.textContent.includes(target.name)));
+  await tick();
+  ok('picking one marks it', $('#cb-pick .chip.on').textContent.includes(target.name));
+
+  const ev = new w.MouseEvent('click', { bubbles:true, cancelable:true });
+  $$('#grid .card').find(el => el.dataset.id === id).querySelector('.card-hit').dispatchEvent(ev);
+  await tick();
+  ok('clicking a card files it', w.Store.channels().find(c => c.id === id).cat === target.id);
+  ok('and does not open youtube', ev.defaultPrevented);
+
+  d.dispatchEvent(new w.KeyboardEvent('keydown', { key:'Escape', bubbles:true }));
+  await tick();
+  ok('escape leaves the mode', $('#catbar').hidden);
+  ok('and the page stops saying it', !d.documentElement.classList.contains('cat-mode'));
+
+  /* defaultPrevented cannot say this: the harness itself cancels every anchor
+     click so jsdom does not try to navigate. What a card being a link again
+     actually means is that clicking it counts as an open and files nothing. */
+  const after = $$('#grid .card')[0].dataset.id;
+  const before = w.Store.channels().find(c => c.id === after);
+  const cat0 = before.cat, clicks0 = before.clicks || 0;
+  $$('#grid .card')[0].querySelector('.card-hit')
+    .dispatchEvent(new w.MouseEvent('click', { bubbles:true, cancelable:true }));
+  await tick();
+  const now = w.Store.channels().find(c => c.id === after);
+  ok('afterwards a card counts as an open again', (now.clicks || 0) === clicks0 + 1);
+  ok('and files nothing', now.cat === cat0);
+}
+
+console.log('\nbadges, layout and presets');
+click($('#btn-set'));
+await tick();
+{
+  const ch = w.Store.channels()[0];
+  w.Store.enrich(ch.id, { latest:{ videoId:'v9', title:'newest', at:Date.now() - 3 * 86400000 } });
+
+  const on = k => click($('#set-body [data-k="' + k + '"]'));
+  const badge = cls => $$('#grid .card .b-' + cls).length;
+
+  on('showPosted'); await tick();
+  ok('when it last posted can be shown', badge('posted') >= 1);
+  ok('and reads as an age', /posted .*ago/.test($('#grid .card .b-posted').textContent),
+     $('#grid .card .b-posted').textContent);
+
+  on('showAdded'); await tick();
+  ok('when you added it can be shown', badge('added') >= 1);
+  on('showRank'); await tick();
+  ok('its rank by clicks can be shown', badge('rank') >= 1);
+  ok('and it is a number with a hash', /^#[0-9]+$/.test($('#grid .card .b-rank').textContent));
+  on('showHandle'); await tick();
+  ok('its handle can be shown', badge('handle') >= 1);
+
+  on('showPosted'); on('showAdded'); on('showRank'); on('showHandle'); await tick();
+  ok('and every one of them switches back off',
+     badge('posted') + badge('added') + badge('rank') + badge('handle') === 0);
+}
+{
+  click($('#set-body [data-k="layout"] .seg-b[data-v="list"]'));
+  await tick();
+  ok('the card shape is a setting', $('#grid').dataset.layout === 'list');
+  click($('#set-body [data-k="badgePos"] .seg-b[data-v="top"]'));
+  await tick();
+  ok('so is where the badges sit', $('#grid').dataset.badges === 'top');
+  click($('#set-body [data-k="avatarPos"] .seg-b[data-v="top"]'));
+  await tick();
+  /* dataset.avatarPos writes data-avatar-pos, not data-avatarPos. The
+     stylesheet has to select the attribute that actually exists, so the
+     attribute is what gets asserted here, not the property that set it. */
+  ok('and the avatar', $('#grid').getAttribute('data-avatar-pos') === 'top');
+  set($('#s-gap'), '20');
+  await tick();
+  ok('the space between cards is a dial',
+     d.documentElement.style.getPropertyValue('--grid-gap') === '20px');
+  set($('#s-nameLines'), '3');
+  await tick();
+  ok('so is how many lines the name gets',
+     d.documentElement.style.getPropertyValue('--name-lines') === '3');
+  set($('#s-avatarSize'), '44');
+  await tick();
+  ok('and the avatar size', d.documentElement.style.getPropertyValue('--av-size') === '44px');
+  click($('#set-body [data-k="border"] .seg-b[data-v="none"]'));
+  await tick();
+  ok('the card edge is a choice', $('#grid').dataset.border === 'none');
+  click($('#set-body [data-k="surface"] .seg-b[data-v="flat"]'));
+  await tick();
+  ok('so is its ground', $('#grid').dataset.surface === 'flat');
+
+  ok('there are presets', $$('#set-body .presets .btn').length === 4);
+  click($('#set-body .presets [data-preset="classic"]'));
+  await tick();
+  ok('one sets several dials at once',
+     $('#grid').dataset.layout === 'card' && $('#grid').dataset.border === 'hairline'
+     && $('#grid').dataset.surface === 'raised' && $('#grid').dataset.badges === 'bottom');
+  ok('and it is stored, not just drawn',
+     JSON.parse(w.localStorage.getItem('hub.ui.v1')).layout === 'card');
+  click($('#set-body .presets [data-preset="poster"]'));
+  await tick();
+  ok('another sets different ones',
+     $('#grid').dataset.avatarPos === 'top' && $('#grid').dataset.border === 'accent');
+  click($('#set-body [data-k="border"] .seg-b[data-v="none"]'));
+  await tick();
+  ok('a dial moved afterwards is still yours', $('#grid').dataset.border === 'none');
+  click($('#set-body .presets [data-preset="classic"]'));
+  await tick();
+}
+click($('#sheet-set [data-close]'));
+await tick();
 
 console.log('\nkeys');
 d.dispatchEvent(new w.KeyboardEvent('keydown', { key:'n', bubbles:true }));

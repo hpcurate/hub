@@ -75,6 +75,7 @@
       <button class="seg-b" data-size="l">L</button>
     </div>
 
+    <button class="btn" id="btn-catmode" title="Categorise by clicking cards">categorise</button>
     <button class="btn" id="btn-cats" title="Manage categories">categories</button>
     <button class="btn" id="btn-q" title="Queue" hidden>queue<span class="btn-n" id="q-n"></span></button>
     <button class="btn" id="btn-set" title="Settings">settings</button>
@@ -82,6 +83,16 @@
 
   <!-- ── Category filter ──────────────────────────────────────────────── -->
   <div class="chips" id="chips"></div>
+
+  <!-- ── Categorise mode ──────────────────────────────────────────────────
+       Pick one here, then click cards. The board stops being a set of links
+       for as long as this is open, which is why it is loud about being on. -->
+  <div class="catbar" id="catbar" hidden>
+    <span class="cb-k">filing into</span>
+    <div class="cb-pick" id="cb-pick"></div>
+    <span class="cb-note">click a card to file it</span>
+    <button class="btn btn-s" id="cb-done">done</button>
+  </div>
 
   <!-- ── The board ────────────────────────────────────────────────────── -->
   <main class="grid" id="grid" data-size="m"></main>

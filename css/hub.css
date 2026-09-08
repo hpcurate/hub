@@ -133,7 +133,7 @@ kbd{
    there is never a horizontal scrollbar and never a ragged right edge. The size
    control moves the minimum, not the count. */
 .grid{
-  display:grid;gap:12px;
+  display:grid;gap:var(--grid-gap,12px);
   grid-template-columns:repeat(auto-fill,minmax(min(var(--min),100%),1fr));
 }
 .grid[data-size="s"]{--min:200px}
@@ -176,10 +176,23 @@ kbd{
 .card-edit{pointer-events:auto}
 
 .card-top{display:flex;align-items:flex-start;gap:8px}
+/* ── The name ────────────────────────────────────────────────────────────────
+   It wraps to as many lines as the Lines setting allows, and it must not be cut
+   while doing it. Two things were doing the cutting: a line box tighter than
+   the font's descenders, so the tail of a g or a y on the last line met the
+   clip edge, and the clamp having no room of its own. The line-height is now
+   above 1.2 and the box gets a pixel underneath it, which is what a descender
+   needs. `min-height` keeps a one-line name from making a shorter card than its
+   neighbours. */
 .card-name{
   margin:0;flex:1;min-width:0;
-  font:600 17px/1.2 var(--head);letter-spacing:-.01em;
-  overflow-wrap:anywhere;
+  font:600 17px/1.32 var(--head);letter-spacing:-.01em;
+  overflow-wrap:anywhere;hyphens:auto;
+  display:-webkit-box;-webkit-box-orient:vertical;
+  -webkit-line-clamp:var(--name-lines,2);
+  overflow:hidden;
+  padding-bottom:2px;
+  min-height:calc(1.32em + 2px);
 }
 .card-edit{
   flex:0 0 auto;width:24px;height:22px;margin:-2px -4px 0 0;
@@ -638,3 +651,82 @@ input[type="range"]::-moz-range-thumb{
 .q-t{font-size:12.5px;line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .q-c{font:500 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--tx-2)}
 .q-empty{margin:0;padding:22px 4px;font-size:12.5px;color:var(--tx-2);text-align:center}
+
+/* ── Badges ──────────────────────────────────────────────────────────────────
+   One row, one shape, however many of them are switched on. They used to be two
+   hard-coded spans; making them a list meant they could stop each having their
+   own rule, which is why five more of them cost nothing here. */
+.card .badges{
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  margin-left:auto;min-width:0;
+}
+.badge{
+  flex:0 0 auto;
+  font:500 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--tx-2);
+}
+.badge.never{color:var(--mu)}
+.badge.fresh{color:var(--y)}
+.b-count,.b-added,.b-handle{color:var(--mu)}
+.b-rank{color:var(--y)}
+.b-queued{color:var(--gr)}
+.b-posted{color:var(--tx-2)}
+.grid.no-counts .card .b-count{display:none}
+.grid.no-seen .card .b-seen{display:none}
+
+/* Badges above the card's own body rather than under it. The foot is the last
+   child, so moving it is one order. */
+.grid[data-badges="top"] .card .card-foot{order:-1;padding-top:0;padding-bottom:2px}
+
+/* ── Card shapes ─────────────────────────────────────────────────────────── */
+.grid[data-layout="compact"] .card{min-height:0;padding:10px 12px;gap:6px}
+.grid[data-layout="compact"] .card-name{font-size:15px}
+
+/* One column, and the card turns on its side: avatar, then name and badges in
+   a row. A board of ninety is a list, not a grid. */
+.grid[data-layout="list"]{grid-template-columns:1fr}
+.grid[data-layout="list"] .card{
+  min-height:0;padding:9px 12px;gap:10px;
+  flex-direction:row;align-items:center;
+}
+.grid[data-layout="list"] .card-top{flex:0 1 auto;min-width:0;max-width:46%}
+.grid[data-layout="list"] .card-name{font-size:14.5px;-webkit-line-clamp:1}
+.grid[data-layout="list"] .card-desc{flex:1;-webkit-line-clamp:1;margin:0}
+.grid[data-layout="list"] .card-foot{margin-left:auto;padding-top:0;order:0}
+.grid[data-layout="list"] .heat{height:2px}
+
+/* Avatar above the name instead of beside it. */
+.grid[data-avatar-pos="top"] .card-top{flex-direction:column;align-items:flex-start;gap:8px}
+.grid[data-avatar-pos="top"] .card .new{position:absolute;top:14px;right:14px;margin:0}
+.card .av{width:var(--av-size,30px);height:var(--av-size,30px)}
+
+/* ── Edge and ground ─────────────────────────────────────────────────────── */
+.grid[data-border="none"] .card{border-color:transparent}
+.grid[data-border="accent"] .card{border-color:color-mix(in srgb,var(--c) 34%,var(--bd))}
+.grid[data-border="accent"] .card:hover{border-color:color-mix(in srgb,var(--c) 62%,var(--bd))}
+.grid[data-surface="flat"] .card{background:transparent}
+.grid[data-surface="flat"] .card:hover{background:var(--s1)}
+
+/* ── Categorise mode ─────────────────────────────────────────────────────────
+   The board stops being a set of links while this is on, so it says so loudly.
+   A mode you can be in without noticing is a mode that opens YouTube when you
+   meant to file something. */
+.catbar{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  margin:0 0 16px;padding:11px 13px;
+  background:var(--yd);border:var(--bw) solid var(--yb);border-radius:var(--r2);
+  animation:card-in calc(.24s * var(--mo)) var(--ease-out);
+}
+.cb-k{font:700 9px/1.4 var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--y)}
+.cb-pick{display:flex;flex-wrap:wrap;gap:5px;flex:1}
+.cb-note{font:500 10px/1.4 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--tx-2)}
+.btn.on{background:var(--y);border-color:var(--y);color:var(--on-y);font-weight:700}
+
+html.cat-mode .card{cursor:copy}
+html.cat-mode .card:hover{border-color:var(--y)}
+html.cat-mode .card::after{opacity:1}
+html.cat-mode .chips{opacity:.45}
+html.cat-mode .card .card-edit{display:none}
+
+/* ── Presets ─────────────────────────────────────────────────────────────── */
+.presets{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.set-preset{align-items:flex-start}

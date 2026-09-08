@@ -115,7 +115,7 @@ function build(ch){
       '<button class="card-edit" title="Edit">\u22ef</button></div>' +
     '<p class="card-desc"></p>' +
     '<div class="card-foot"><button class="tag" type="button" title="Categorise"></button>' +
-      '<span class="count"></span><span class="seen"></span></div>' +
+      '<span class="badges"></span></div>' +
     '<span class="heat"></span>';
 
   /* The stamp is written on the way out, on the same click that opens the tab,
@@ -125,8 +125,16 @@ function build(ch){
      opens is granted before it loads and the guard never sees an unpicked one.
      Off disk the bridge declines and the anchor behaves like an anchor. */
   el.querySelector('.card-hit').addEventListener('click', e => {
+    /* Categorise mode: a click files the channel instead of opening it. The
+       card is still a link, so the navigation has to be stopped first. */
+    if (catMode){
+      e.preventDefault(); e.stopPropagation();
+      Store.updateChannel(ch.id, { cat: catModeTo });
+      render();
+      return;
+    }
     Store.touch(ch.id);
-    paintSeen(el, Store.channels().find(c => c.id === ch.id));
+    paintBadges(el, Store.channels().find(c => c.id === ch.id));
     if (typeof HubBridge !== 'undefined' && HubBridge.inExt){
       e.preventDefault();
       HubBridge.open(ch, { newTab: ui.newTab });
@@ -145,6 +153,80 @@ function build(ch){
     openQuick(ch.id, e.currentTarget);
   });
   return el;
+}
+
+/* ── Badges ──────────────────────────────────────────────────────────────────
+   The small facts along the bottom of a card. Each is a row in this list and a
+   switch in settings, so adding one is a line rather than a pass through the
+   renderer, the stylesheet and the settings pane.
+
+   `get` returns the text, or null for "this card has nothing to say here" —
+   which is not the same as the badge being off. A channel with no upload date
+   known simply shows no upload badge, whatever the setting says. */
+const BADGES = [
+  { k:'showSeen',   label:'time since last viewed', cls:'seen',
+    get: ch => since(ch.seen) },
+  { k:'showCounts', label:'click count', cls:'count',
+    get: ch => (ch.clicks || 0) + (ch.clicks === 1 ? ' open' : ' opens') },
+  { k:'showPosted', label:'when the channel last posted', cls:'posted',
+    note:'from its feed, in the extension only',
+    get: ch => ch.latest && ch.latest.at ? 'posted ' + since(ch.latest.at) : null },
+  { k:'showAdded',  label:'when you added it', cls:'added',
+    get: ch => ch.added ? 'added ' + since(ch.added) : null },
+  { k:'showRank',   label:'its place by clicks', cls:'rank',
+    get: (ch, ctx) => ctx.rank.has(ch.id) ? '#' + ctx.rank.get(ch.id) : null },
+  { k:'showQueued', label:'how many of its videos are queued', cls:'queued',
+    get: (ch, ctx) => ctx.queued.get(ch.id) ? ctx.queued.get(ch.id) + ' queued' : null },
+  { k:'showHandle', label:'its youtube handle', cls:'handle',
+    get: ch => {
+      const s = HubScope.parse(ch.url);
+      return s && s.kind === 'handle' ? s.key : null;
+    } },
+];
+
+/* Facts that are about the board rather than about one channel, worked out once
+   per render instead of once per card. */
+function badgeContext(){
+  const rank = new Map();
+  Store.channels()
+    .filter(c => (c.clicks || 0) > 0)
+    .sort((a, b) => (b.clicks || 0) - (a.clicks || 0))
+    .forEach((c, i) => rank.set(c.id, i + 1));
+
+  const queued = new Map();
+  const byScope = new Map();
+  Store.channels().forEach(c => {
+    const s = HubScope.parse(c.url);
+    if (s) byScope.set(s.kind + ':' + s.key, c.id);
+  });
+  Store.queue().forEach(q => {
+    const s = q.channelUrl && HubScope.parse(q.channelUrl);
+    const id = s && byScope.get(s.kind + ':' + s.key);
+    if (id) queued.set(id, (queued.get(id) || 0) + 1);
+  });
+
+  return { rank, queued };
+}
+
+let badgeCtx = { rank:new Map(), queued:new Map() };
+
+function paintBadges(el, ch){
+  const box = el.querySelector('.badges');
+  box.textContent = '';
+  BADGES.forEach(b => {
+    if (!ui[b.k]) return;
+    const text = b.get(ch, badgeCtx);
+    if (text == null) return;
+    const s = document.createElement('span');
+    s.className = 'badge b-' + b.cls;
+    s.textContent = text;
+    if (b.cls === 'seen'){
+      s.classList.toggle('never', !ch.seen);
+      s.classList.toggle('fresh', !!ch.seen && Date.now() - ch.seen < DAY);
+    }
+    box.appendChild(s);
+  });
+  el.classList.toggle('no-badges', !box.childElementCount);
 }
 
 /* ── The heat line ───────────────────────────────────────────────────────────
@@ -175,14 +257,6 @@ function mix(a, b, t){
   const [r1, g1, b1] = hex(a), [r2, g2, b2] = hex(b);
   const c = (x, y) => Math.round(x + (y - x) * t);
   return 'rgb(' + c(r1, r2) + ',' + c(g1, g2) + ',' + c(b1, b2) + ')';
-}
-
-function paintSeen(el, ch){
-  if (!ch) return;
-  const s = el.querySelector('.seen');
-  s.textContent = since(ch.seen);
-  s.classList.toggle('never', !ch.seen);
-  s.classList.toggle('fresh', !!ch.seen && Date.now() - ch.seen < DAY);
 }
 
 function paint(el, ch){
@@ -223,11 +297,8 @@ function paint(el, ch){
   t.classList.toggle('none', !cat);
   t.classList.toggle('has-icon', !!ic);
 
-  const n = el.querySelector('.count');
-  n.textContent = (ch.clicks || 0) + (ch.clicks === 1 ? ' open' : ' opens');
-
   paintHeat(el, ch);
-  paintSeen(el, ch);
+  paintBadges(el, ch);
 }
 
 /* ── FLIP ────────────────────────────────────────────────────────────────────
@@ -259,6 +330,8 @@ function render(){
   const total = Store.channels().length;
 
   grid.dataset.size = size;
+  badgeCtx = badgeContext();
+  renderCatBar();
   renderChips();
   renderQueue();
 
@@ -348,6 +421,60 @@ function renderChips(){
   }
 }
 function toggle(id){ picked.has(id) ? picked.delete(id) : picked.add(id) }
+
+
+/* ── Categorise mode ─────────────────────────────────────────────────────────
+   The quick menu on a tag files one channel. This files many: pick a category
+   once, then click through the cards. Asked for as "hit the toggle, select a
+   category, tap the channel card".
+
+   While it is on the board is not a set of links, and it says so loudly — a
+   mode you can be in without noticing is a mode that opens YouTube when you
+   meant to file something. It ends on the toggle, on "done", or on Escape. */
+let catMode = false;
+let catModeTo = '';
+
+function renderCatBar(){
+  const bar = $('#catbar');
+  bar.hidden = !catMode;
+  document.documentElement.classList.toggle('cat-mode', catMode);
+  $('#btn-catmode').classList.toggle('on', catMode);
+  if (!catMode) return;
+
+  const box = $('#cb-pick');
+  box.textContent = '';
+
+  const pick = (id, name, color, icon) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip' + (catModeTo === id ? ' on' : '');
+    b.style.setProperty('--c', color);
+    const ic = iconEl(icon);
+    if (ic){ b.appendChild(ic); b.classList.add('has-icon') }
+    b.appendChild(document.createTextNode(name));
+    b.addEventListener('click', () => { catModeTo = id; renderCatBar() });
+    box.appendChild(b);
+  };
+
+  Store.cats().forEach(c => pick(c.id, c.name, c.color, c.icon));
+  pick('', 'uncategorised', 'var(--mu)', '');
+}
+
+function setCatMode(on){
+  catMode = on;
+  if (on){
+    closeQuick();
+    /* Start on whichever category is being filtered for, if exactly one is —
+       filtering to a category and then filing into it is the obvious pass. */
+    if (!catModeTo && picked.size === 1) catModeTo = [...picked][0];
+    if (!catModeTo && Store.cats().length) catModeTo = Store.cats()[0].id;
+  }
+  renderCatBar();
+  render();
+}
+
+$('#btn-catmode').addEventListener('click', () => setCatMode(!catMode));
+$('#cb-done').addEventListener('click', () => setCatMode(false));
 
 /* ── Sheets ──────────────────────────────────────────────────────────────────
    One scrim, one panel, two contents. Closing is animated by adding .out and
@@ -487,7 +614,14 @@ let newColor = Store.PALETTE[0];
 
 /* The ten are a shortcut, not the choice. The last swatch is a colour input
    wearing the same shape as the other ten, so "any colour" is one click deeper
-   than the presets rather than somewhere else entirely. */
+   than the presets rather than somewhere else entirely.
+
+   `onPick` is called with (hex, live). A native colour picker fires `input` on
+   every drag, and the caller must not rebuild this row while it does — the
+   element the picker belongs to would be replaced and the picker would shut.
+   That was the "menu pops up and immediately disappears" bug: the row redrew
+   itself out from under the dialog on the first event it sent. `live` is true
+   for those, false for a preset click and for the final `change`. */
 function swatches(current, onPick){
   const cur = String(current || '').toLowerCase();
   const wrap = document.createElement('div');
@@ -499,7 +633,7 @@ function swatches(current, onPick){
     b.className = 'sw' + (hex.toLowerCase() === cur ? ' on' : '');
     b.style.setProperty('--c', hex);
     b.title = hex;
-    b.addEventListener('click', () => onPick(hex));
+    b.addEventListener('click', () => onPick(hex, false));
     wrap.appendChild(b);
   });
 
@@ -511,7 +645,10 @@ function swatches(current, onPick){
   const inp = document.createElement('input');
   inp.type = 'color';
   inp.value = /^#[0-9a-f]{6}$/i.test(current || '') ? current : '#A78BFA';
-  inp.addEventListener('input', () => onPick(inp.value));
+  /* input while the dialog is open, change when it closes. The first is a
+     preview and must not disturb the DOM; the second is the commit. */
+  inp.addEventListener('input', () => onPick(inp.value, true));
+  inp.addEventListener('change', () => onPick(inp.value, false));
   lab.appendChild(inp);
   wrap.appendChild(lab);
 
@@ -575,9 +712,13 @@ function renderCats(){
     });
     r.appendChild(ib);
 
-    r.appendChild(swatches(c.color, hex => {
+    r.appendChild(swatches(c.color, (hex, live) => {
       Store.updateCat(c.id, { color:hex });
-      renderCats(); render();
+      /* Live: paint what is already on screen and touch nothing else, so the
+         open colour dialog keeps the element it belongs to. */
+      r.style.setProperty('--c', hex);
+      render();
+      if (!live) renderCats();
     }));
 
     const name = document.createElement('input');
@@ -621,7 +762,10 @@ function renderCats(){
 
   const sw = $('#n-sw');
   sw.textContent = '';
-  sw.appendChild(swatches(newColor, hex => { newColor = hex; renderCats() }));
+  sw.appendChild(swatches(newColor, (hex, live) => {
+    newColor = hex;
+    if (!live) renderCats();
+  }));
 }
 
 $('#f-newcat').addEventListener('submit', e => {
@@ -711,7 +855,39 @@ addEventListener('resize', closeQuick);
 const WIDTH_FULL = 2600;
 const widthLabel = w => (!w || w >= WIDTH_FULL) ? 'full width' : w + 'px';
 
+/* Four bundles. A preset is not a mode — it writes the same dials the rows
+   below write, and every one of them is still yours afterwards. That is why
+   there is no "custom" preset and nothing is highlighted: once you move a dial
+   you are not on a preset any more, and pretending otherwise would be a lie the
+   settings pane tells about itself. */
+const PRESETS = [
+  { name:'classic', ui:{ layout:'card', avatarPos:'left', badgePos:'bottom',
+      avatarSize:30, nameLines:2, gap:12, border:'hairline', surface:'raised',
+      showDesc:true, descLines:4, showAvatars:true } },
+  { name:'compact', ui:{ layout:'compact', avatarPos:'left', badgePos:'bottom',
+      avatarSize:24, nameLines:1, gap:8, border:'hairline', surface:'raised',
+      showDesc:false, showAvatars:true } },
+  { name:'list', ui:{ layout:'list', avatarPos:'left', badgePos:'bottom',
+      avatarSize:28, nameLines:1, gap:6, border:'hairline', surface:'flat',
+      showDesc:false, showAvatars:true } },
+  { name:'poster', ui:{ layout:'card', avatarPos:'top', badgePos:'top',
+      avatarSize:52, nameLines:2, gap:16, border:'accent', surface:'raised',
+      showDesc:true, descLines:3, showAvatars:true } },
+];
+
 const SETTINGS = [
+  ['layout', [
+    { k:'preset',     t:'preset', label:'presets',
+      note:'a starting point, not a mode: every dial below stays yours' },
+    { k:'layout',     t:'seg',   label:'card shape', opts:['card', 'compact', 'list'] },
+    { k:'avatarPos',  t:'seg',   label:'avatar', opts:['left', 'top'] },
+    { k:'badgePos',   t:'seg',   label:'badges', opts:['bottom', 'top'] },
+    { k:'avatarSize', t:'range', label:'avatar size', min:20, max:56, step:2, fmt:v => v + 'px' },
+    { k:'nameLines',  t:'range', label:'lines for the name', min:1, max:4, step:1, fmt:String },
+    { k:'gap',        t:'range', label:'space between cards', min:4, max:28, step:2, fmt:v => v + 'px' },
+    { k:'border',     t:'seg',   label:'card edge', opts:['hairline', 'none', 'accent'] },
+    { k:'surface',    t:'seg',   label:'card ground', opts:['raised', 'flat'] },
+  ]],
   ['look', [
     { k:'accent',   t:'color',  label:'accent colour' },
     { k:'maxWidth', t:'range',  label:'content width', min:880, max:WIDTH_FULL, step:40,
@@ -731,6 +907,12 @@ const SETTINGS = [
     { k:'showSeen',    t:'toggle', label:'time since last viewed' },
     { k:'showCounts',  t:'toggle', label:'click counts' },
     { k:'showHeat',    t:'toggle', label:'click heat line' },
+    { k:'showPosted',  t:'toggle', label:'when the channel last posted',
+      note:'read from its feed, in the extension only' },
+    { k:'showAdded',   t:'toggle', label:'when you added it' },
+    { k:'showRank',    t:'toggle', label:'its place on the board by clicks' },
+    { k:'showQueued',  t:'toggle', label:'how many of its videos you have queued' },
+    { k:'showHandle',  t:'toggle', label:'its youtube handle' },
     { k:'heat',        t:'heat',   label:'heat gradient',
       note:'from the channel you open least to the one you open most' },
   ]],
@@ -764,6 +946,15 @@ function applyLook(){
   r.setProperty('--r-base', ui.radius + 'px');
   r.setProperty('--mo', String(ui.motion));
   r.setProperty('--desc-lines', String(ui.descLines));
+  r.setProperty('--name-lines', String(ui.nameLines));
+  r.setProperty('--av-size', ui.avatarSize + 'px');
+  r.setProperty('--grid-gap', ui.gap + 'px');
+
+  grid.dataset.layout = ui.layout;
+  grid.dataset.avatarPos = ui.avatarPos;
+  grid.dataset.badges = ui.badgePos;
+  grid.dataset.border = ui.border;
+  grid.dataset.surface = ui.surface;
 
   grid.classList.toggle('no-heat',   !ui.showHeat);
   grid.classList.toggle('no-counts', !ui.showCounts);
@@ -874,6 +1065,25 @@ function control(it){
       seg.appendChild(b);
     });
     row.appendChild(seg);
+  }
+
+  if (it.t === 'preset'){
+    const row2 = document.createElement('div');
+    row2.className = 'presets';
+    PRESETS.forEach(p2 => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'btn btn-s'; b.textContent = p2.name;
+      b.dataset.preset = p2.name;
+      b.addEventListener('click', () => {
+        ui = Store.setUi(p2.ui);
+        applyLook();
+        render();
+        renderSettings();
+        said('applied ' + p2.name);
+      });
+      row2.appendChild(b);
+    });
+    row.appendChild(row2);
   }
 
   if (it.t === 'heat'){
@@ -1073,6 +1283,7 @@ addEventListener('keydown', e => {
 
   if (e.key === 'Escape'){
     if (openName){ closeSheet(); return }
+    if (catMode){ setCatMode(false); return }
     if (typing && document.activeElement.id === 'q'){
       q = ''; document.activeElement.value = ''; document.activeElement.blur(); render();
     }
@@ -1091,7 +1302,7 @@ addEventListener('keydown', e => {
 setInterval(() => {
   Store.channels().forEach(ch => {
     const el = nodes.get(ch.id);
-    if (el) paintSeen(el, ch);
+    if (el) paintBadges(el, ch);
   });
 }, 30e3);
 

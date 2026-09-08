@@ -15,7 +15,8 @@ motion tokens, Grotesk for titles and JetBrains Mono for everything else.
   Deleting one never deletes its channels; they fall back to uncategorised.
   Empty ones can be kept out of the filter bar.
 - **Quick categorise** — click the category tag on any card and pick from a
-  menu. No pane, no form; it is how a channel added from YouTube gets filed.
+  menu. Or hit **categorise**, choose one category, and click through the cards;
+  the board stops being a set of links until you leave the mode.
 - **Avatars and what is new** — in the extension, the board reads each channel's
   own page for its picture and its feed for its newest upload, and marks a card
   when that channel has posted since you last opened it.
@@ -41,10 +42,15 @@ motion tokens, Grotesk for titles and JetBrains Mono for everything else.
 - **Export / import** — one JSON file with every channel, category and setting.
   Import replaces the board.
 
+- **Badges** — nine small facts a card can carry, each its own switch: last
+  viewed, click count, when the channel last posted, when you added it, its rank
+  on the board by clicks, how many of its videos you have queued, its handle,
+  the category tag, and a dot when there is something new.
+- **Layout** — four presets (classic, compact, list, poster) and every dial
+  underneath them: card shape, where the avatar and the badges sit, avatar size,
+  lines for the name, space between cards, card edge and card ground.
 - **Settings for most of it** — accent, corner radius, motion, content width,
-  and a switch for every part of a card: avatar (round or square), the new dot,
-  description and how many lines of it, category tag, last viewed, click count,
-  heat line.
+  and a switch for every part of a card.
 
 Keys: `/` search · `Enter` opens the first result · `n` new channel · `Esc` close.
 
