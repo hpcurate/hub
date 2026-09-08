@@ -104,5 +104,41 @@ eq('an id',    S.channelUrl({ kind:'id', key:'UC1' }),       'https://www.youtub
 eq('a name',   S.channelUrl({ kind:'name', key:'keep' }),    'https://www.youtube.com/c/keep');
 eq('nothing',  S.channelUrl(null),                           'https://www.youtube.com/');
 
+console.log('\na channel, on one of its own tabs');
+eq('a handle',  S.onTab('https://www.youtube.com/@veritasium', 'videos'),
+                'https://www.youtube.com/@veritasium/videos');
+eq('an id',     S.onTab('https://www.youtube.com/channel/UCabc', 'videos'),
+                'https://www.youtube.com/channel/UCabc/videos');
+eq('a legacy /c/',    S.onTab('https://www.youtube.com/c/Veritasium', 'videos'),
+                      'https://www.youtube.com/c/Veritasium/videos');
+eq('a legacy /user/', S.onTab('https://www.youtube.com/user/1veritasium', 'videos'),
+                      'https://www.youtube.com/user/1veritasium/videos');
+eq('the host it was written with is kept',
+   S.onTab('https://youtube.com/@x', 'videos'), 'https://youtube.com/@x/videos');
+eq('a tab replaces a subpage rather than stacking on it',
+   S.onTab('https://www.youtube.com/@x/about', 'videos'), 'https://www.youtube.com/@x/videos');
+eq('asking for the tab it is already on changes nothing',
+   S.onTab('https://www.youtube.com/@x/videos', 'videos'), 'https://www.youtube.com/@x/videos');
+eq('home is the url itself',
+   S.onTab('https://www.youtube.com/@x', 'home'), 'https://www.youtube.com/@x');
+eq('so is no tab at all',
+   S.onTab('https://www.youtube.com/@x', ''), 'https://www.youtube.com/@x');
+eq('a tab that is not one is refused, not appended',
+   S.onTab('https://www.youtube.com/@x', 'about'), 'https://www.youtube.com/@x');
+eq('a url that names no channel is handed back untouched',
+   S.onTab('https://www.youtube.com/watch?v=abc', 'videos'), 'https://www.youtube.com/watch?v=abc');
+eq('and so is something that is not a url',
+   S.onTab('', 'videos'), '');
+
+/* The whole reason this is safe: a tab of a channel is the same channel, so the
+   guard needs to know nothing about tabs. */
+{
+  const grant = S.withAlias(S.emptyGrant(), S.parse('https://www.youtube.com/@keep'));
+  eq('the videos tab is inside the grant the channel got',
+     S.decide(S.onTab('https://www.youtube.com/@keep', 'videos'), grant, null).state, 'allow');
+  eq('and another channel\u2019s videos tab still is not',
+     S.decide(S.onTab('https://www.youtube.com/@other', 'videos'), grant, null).state, 'block');
+}
+
 console.log('\n' + pass + ' passed, ' + fails.length + ' failed');
 if (fails.length){ fails.forEach(f => console.log('  - ' + f)); process.exit(1) }

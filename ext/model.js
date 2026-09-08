@@ -125,8 +125,10 @@ const HubModel = (() => {
     showPosted:false, showAdded:false, showRank:false,
     showQueued:false, showHandle:false,
 
-    /* Board behaviour. */
-    enterOpens:true, newTab:true,
+    /* Board behaviour. `openTab` is which of a channel's own tabs a card lands
+       on: its home page is a trailer and three shelves, its videos tab is the
+       thing you clicked for. */
+    enterOpens:true, newTab:true, openTab:'videos',
 
     /* The extension. checkEvery is in hours; a feed that is polled harder than
        this tells you nothing more, because uploads are not that frequent. */

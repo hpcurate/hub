@@ -8,7 +8,9 @@ motion tokens, Grotesk for titles and JetBrains Mono for everything else.
 ## What it does
 
 - **Channels** — a name, a YouTube URL, a description, a category. Leave the
-  name blank and it is taken from the URL.
+  name blank and it is taken from the URL. Clicking one opens its **videos
+  tab**, not its home page, which is a trailer and three shelves; that is a
+  setting, and `home` is still one of the answers.
 - **Categories** — five to start with, all renamable, reorderable, deletable,
   and any colour you like, not just the ten presets. Each can carry one of
   twenty icons, or none, which then shows on every card and filter chip.

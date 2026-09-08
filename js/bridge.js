@@ -33,18 +33,24 @@ const HubBridge = (() => {
        the board's tab — a new tab, granted before it loads
        a blocked tab   — this tab, granted, straight to the channel
 
+     `opts.url` is where to land — the videos tab, by default, rather than the
+     channel's home page. The **grant** is still read from `ch.url`, because a
+     grant is a channel and not a page: every tab of it is inside the same scope,
+     so where the tab lands is the board's choice and never the guard's.
+
      Returns true when it has taken responsibility for the navigation. */
   async function open(ch, opts){
     if (!inExt) return false;
     const scope = HubScope.parse(ch.url);
     if (!scope) return false;                 /* not a channel url — let it through */
+    const to = (opts && opts.url) || ch.url;
 
     if (blocked){
-      const ok = await ask({ type:'unlock', scope, url:ch.url });
+      const ok = await ask({ type:'unlock', scope, url:to });
       /* Without the grant the guard would only send the tab straight back here.
          Doing nothing visible beats a loop. */
       if (!ok) return true;
-      location.href = ch.url;
+      location.href = to;
       return true;
     }
 
@@ -52,13 +58,13 @@ const HubBridge = (() => {
        Turned off, the board's own tab goes in, which is what you want when the
        board is your home page rather than a window you keep open. */
     if (opts && opts.newTab === false){
-      const ok = await ask({ type:'unlock', scope, url:ch.url });
+      const ok = await ask({ type:'unlock', scope, url:to });
       if (!ok) return true;
-      location.href = ch.url;
+      location.href = to;
       return true;
     }
 
-    await ask({ type:'openInTab', scope, url:ch.url });
+    await ask({ type:'openInTab', scope, url:to });
     return true;
   }
 

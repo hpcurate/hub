@@ -101,7 +101,7 @@ console.log('\nopened off disk');
   ok('the bridge knows there is no extension', t.w.eval('HubBridge.inExt') === false);
   const hit = t.w.document.querySelector('#grid .card .card-hit');
   ok('the card is still a plain link to the channel',
-     hit.href === CHANNEL.url && hit.target === '_blank');
+     hit.href === CHANNEL.url + '/videos' && hit.target === '_blank', hit.href);
   clickCard(t.w);
   await wait(30);
   ok('the bridge takes no part in it', t.sent.length === 0);
@@ -125,6 +125,10 @@ console.log('\nthe extension\u2019s own page');
   const msg = t.sent.find(m => m.type === 'openInTab');
   ok('a granted tab is asked for', !!msg, JSON.stringify(t.sent));
   ok('and it names the channel', msg && msg.scope.kind === 'handle' && msg.scope.key === '@keep');
+  /* Where it lands is the board's choice; what it is allowed to be is the
+     channel. The grant is the scope, and the scope is read from the stored url
+     however deep into the channel the tab is sent. */
+  ok('and lands on the videos tab', msg && msg.url === CHANNEL.url + '/videos', msg && msg.url);
   ok('this tab stays where it is', !t.navigated());
   t.dom.window.close();
 }
@@ -146,6 +150,7 @@ console.log('\na tab the guard sent here');
   const msg = t.sent.find(m => m.type === 'unlock');
   ok('this tab is unlocked first', !!msg, JSON.stringify(t.sent));
   ok('for the channel that was clicked', msg && msg.scope.key === '@keep');
+  ok('and taken to its videos tab', msg && msg.url === CHANNEL.url + '/videos', msg && msg.url);
   ok('no second tab is asked for', !t.sent.some(m => m.type === 'openInTab'));
   ok('and this tab is taken in', t.navigated());
   t.dom.window.close();

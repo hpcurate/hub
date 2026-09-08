@@ -107,7 +107,11 @@ ok('it survives a reload (localStorage)',
    JSON.parse(w.localStorage.getItem('hub.channels.v1')).length === 1);
 ok('a card is on the board', $$('#grid .card').length === 1);
 ok('the card is a real link to the channel',
-   $('#grid .card .card-hit').getAttribute('href') === 'https://youtube.com/@veritasium');
+   $('#grid .card .card-hit').getAttribute('href') === 'https://youtube.com/@veritasium/videos',
+   $('#grid .card .card-hit').getAttribute('href'));
+ok('and it lands on the videos tab, not the home page',
+   $('#grid .card .card-hit').getAttribute('href').endsWith('/videos'));
+ok('the stored url is untouched by that', w.Store.channels()[0].url === 'https://youtube.com/@veritasium');
 ok('the description is on the card',
    $('#grid .card .card-desc').textContent === 'physics and engineering explainers');
 ok('the category tag is on the card', $('#grid .card .tag').textContent === cats[0].name);
@@ -997,6 +1001,37 @@ console.log('\nclearing the dots');
      !$$('#grid .card').find(el => el.dataset.id === one.id).classList.contains('is-new'));
   ok('without opening the channel',
      w.Store.channels().find(c => c.id === one.id).seen === one.seen);
+}
+
+console.log('\nwhere a card lands');
+{
+  const href = () => $('#grid .card .card-hit').getAttribute('href');
+  ok('a card goes to the videos tab by default', href().endsWith('/videos'), href());
+
+  click($('#btn-set'));
+  await tick();
+  click($('#set-body [data-k="openTab"] .seg-b[data-v="home"]'));
+  await tick();
+  ok('it can be sent to the channel home page instead',
+     !href().endsWith('/videos') && href().includes('youtube'), href());
+  ok('and that is the stored url itself',
+     href() === w.Store.channels().find(c => c.id === $('#grid .card').dataset.id).url);
+  ok('the choice is remembered',
+     JSON.parse(w.localStorage.getItem('hub.ui.v1')).openTab === 'home');
+  click($('#set-body [data-k="openTab"] .seg-b[data-v="videos"]'));
+  await tick();
+  ok('and back to the videos tab', href().endsWith('/videos'));
+  click($('#sheet-set [data-close]'));
+  await tick();
+
+  /* The tab is where it lands, not what it is allowed to be: opening one still
+     stamps the same channel and still counts as one open. */
+  const id = $('#grid .card').dataset.id;
+  const before = w.Store.channels().find(c => c.id === id).clicks || 0;
+  click($('#grid .card .card-hit'));
+  await tick();
+  ok('opening the videos tab still counts as opening the channel',
+     (w.Store.channels().find(c => c.id === id).clicks || 0) === before + 1);
 }
 
 console.log('\nfavourite categories');

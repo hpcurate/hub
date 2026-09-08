@@ -125,8 +125,37 @@ const HubScope = (() => {
     return base + '/c/' + scope.key;
   }
 
-  return { HOSTS, isYouTube, fromPath, parse, classify,
-           emptyGrant, withAlias, withVideo, holds, knowsVideo, decide, channelUrl };
+  /* ── A channel's own tabs ──────────────────────────────────────────────────
+     The same channel, pointed at one of its tabs. A channel's home page is a
+     trailer and three shelves; its videos tab is what you came for, so that is
+     where "open this channel" lands by default.
+
+     The root of the URL is kept exactly as it was written rather than rebuilt
+     from the scope — a handle URL stays a handle URL, an id URL stays an id URL,
+     and whatever host and search the board had is still there. A URL that names
+     no channel is handed back untouched, and so is one already on the tab
+     asked for: the tab replaces whatever subpage was there, it does not stack
+     on top of it.
+
+     Every one of these is inside the channel by `fromPath`, which reads the
+     first segment only — so the guard lets a videos tab through on the same
+     grant as the channel itself, with nothing to teach it. */
+  const TABS = ['videos', 'streams', 'shorts', 'playlists', 'podcasts'];
+
+  function onTab(url, tab){
+    if (!tab || tab === 'home' || !TABS.includes(tab)) return url;
+    let u; try { u = new URL(url, 'https://www.youtube.com') } catch { return url }
+    const seg = u.pathname.split('/').filter(Boolean);
+    if (!fromPath(u.pathname)) return url;
+    /* A handle is one segment; /channel/, /c/ and /user/ are two. */
+    const root = seg[0].startsWith('@') ? seg.slice(0, 1) : seg.slice(0, 2);
+    u.pathname = '/' + root.concat(tab).join('/');
+    return u.toString();
+  }
+
+  return { HOSTS, TABS, isYouTube, fromPath, parse, classify,
+           emptyGrant, withAlias, withVideo, holds, knowsVideo, decide,
+           channelUrl, onTab };
 })();
 
 /* Content scripts in one world, and importScripts in the worker, already share

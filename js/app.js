@@ -38,6 +38,15 @@ function iconEl(key){
   return svg;
 }
 
+/* Where a card goes. A channel's home page is a trailer and three shelves you
+   have mostly seen; its videos tab is what was actually clicked for. Which tab
+   is a setting, and `home` is still one of the answers.
+
+   The scope — what the guard grants, and what the queue matches against — is
+   always read from the stored URL, never from this. This decides where the tab
+   lands, not what it is allowed to be. */
+const openUrl = ch => HubScope.onTab(ch.url, ui.openTab);
+
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const D = n => REDUCED ? 0 : n;
 
@@ -176,7 +185,7 @@ function build(ch){
     paintBadges(el, Store.channels().find(c => c.id === ch.id));
     if (typeof HubBridge !== 'undefined' && HubBridge.inExt){
       e.preventDefault();
-      HubBridge.open(ch, { newTab: ui.newTab });
+      HubBridge.open(ch, { newTab: ui.newTab, url: openUrl(ch) });
     }
   });
   parts.edit.addEventListener('click', e => {
@@ -359,7 +368,7 @@ function paint(el, ch){
   el.style.setProperty('--c', cat ? cat.color : 'var(--tx-2)');
 
   const hit = el.querySelector('.card-hit');
-  hit.href = ch.url;
+  hit.href = openUrl(ch);
   hit.setAttribute('aria-label', 'Open ' + ch.name + ' on YouTube');
 
   el._parts.name.textContent = ch.name;
@@ -1176,6 +1185,8 @@ const SETTINGS = [
     { k:'hideEmpty',  t:'toggle', label:'hide empty categories' },
     { k:'favFirst',   t:'toggle', label:'favourite categories first',
       note:'in the chips, the quick menu and the filing bar' },
+    { k:'openTab',    t:'seg',    label:'where a card lands',
+      opts:['videos', 'home'], note:'a channel home page is a trailer and three shelves' },
     { k:'enterOpens', t:'toggle', label:'enter opens the first result',
       note:'type in search, press enter' },
     { k:'newTab',     t:'toggle', label:'open channels in a new tab', ext:true },
