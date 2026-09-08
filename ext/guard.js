@@ -1,28 +1,35 @@
 /* ── Guard ────────────────────────────────────────────────────────────────────
-   Runs on every YouTube page at document_start. Decides, out of HubScope, and
-   then does exactly one of three things: nothing, take the veil off, or put the
-   board over the page.
+   Runs on every YouTube page at document_start.
 
-   The rule this file is written around: **a failure must leave YouTube alone.**
-   Every path that could hang — the message to the background, the owner of a
-   video, the board's own iframe — has a timeout that ends in an unveil. Being
-   stuck on a blurred page with no way forward is a worse bug than a video that
-   slipped through, so every uncertainty resolves the same way.
+   v0.2.0 covered a blocked page: blur it, put the board over it in an iframe.
+   That did not work, and covering was never really blocking anyway — the page
+   was still loaded, still playing, still one Escape from being underneath you.
+   Since v0.3.0 a blocked page **changes address**. The tab goes to the board,
+   the YouTube document is gone, and the thing that decides where you end up is
+   the board rather than a layer on top of something you did not choose.
+
+   The veil stays, but only as cover: it hides the page for the few milliseconds
+   between document_start and the decision, so nothing of the feed is ever seen.
+
+   The rule this file is written around is unchanged: **a failure must leave
+   YouTube alone.** Every path that could hang ends in an unveil, never in a
+   redirect — a wrong redirect is a page you cannot reach, which is the one
+   outcome worse than a video that slipped through.
 */
 (() => {
   if (window.top !== window) return;         /* embeds and ad frames are not pages */
 
   const html = document.documentElement;
-  const ID = 'hub-guard-root';
+  const ADD_ID = 'hub-add-root';
 
-  let overlay = null;                        /* the shadow host, when mounted */
-  let board = null;                          /* the iframe inside it */
-  let bypass = false;                        /* dismissed for this page load */
+  let bypass = false;                        /* set by the board, or by escape */
+  let addBtn = null;
   let lastUrl = location.href;
   let seq = 0;                               /* cancels the work of a stale url */
+  let gone = false;                          /* a redirect is under way */
 
-  /* ── The veil ──────────────────────────────────────────────────────────
-     The class on <html> is the only record of whether the veil is on. A boolean
+  /* ── The veil ──────────────────────────────────────────────────────────────
+     The class on <html> is the only record of whether it is on. A boolean
      beside it is a second source of truth, and the two coming apart is how a
      page ends up blurred with nothing willing to take it off. */
   const isVeiled = () => html.classList.contains('hub-veil');
@@ -31,8 +38,6 @@
     if (isVeiled() || bypass) return;
     html.classList.remove('hub-unveiling');
     html.classList.add('hub-veil');
-    /* "Locks me into" has to include the sound. A blurred page still playing is
-       the one thing that would make this feel broken. */
     try { document.querySelectorAll('video,audio').forEach(v => v.pause()) } catch {}
   }
 
@@ -42,11 +47,9 @@
       html.classList.remove('hub-veil');
       setTimeout(() => html.classList.remove('hub-unveiling'), 400);
     }
-    dropOverlay();
   }
 
-  /* The failsafe, armed before anything else can go wrong. Nothing in this file
-     is allowed to hold the veil for longer than this without having decided to. */
+  /* The failsafe, armed before anything else can go wrong. */
   let deadman = setTimeout(unveil, 4000);
   const rearm = ms => { clearTimeout(deadman); deadman = setTimeout(unveil, ms) };
 
@@ -54,7 +57,7 @@
 
   /* ── Talking to the background ───────────────────────────────────────────────
      Never rejects and never hangs: a dead worker answers `null`, and null means
-     "no guard", which means the page is left alone. */
+     no guard, which means the page is left alone. */
   const ask = msg => new Promise(resolve => {
     let done = false;
     const finish = v => { if (!done){ done = true; resolve(v) } };
@@ -67,7 +70,20 @@
     } catch { finish(null) }
   });
 
-  /* ── Reading who owns a video ────────────────────────────────────────────────
+  /* ── Leaving ────────────────────────────────────────────────────────────────
+     The whole of blocking, in four lines. `replace` rather than `href` so the
+     blocked page does not sit in the back button waiting to be walked into
+     again, and `gone` so nothing that was already in flight tries to undo it. */
+  function sendToBoard(){
+    if (gone) return;
+    let url;
+    try { url = chrome.runtime.getURL('index.html') }
+    catch { unveil(); bypass = true; return }  /* extension reloaded under us */
+    gone = true;
+    location.replace(url + '?blocked=1&from=' + encodeURIComponent(location.href));
+  }
+
+  /* ── Reading who owns a video ──────────────────────────────────────────────
      YouTube says it in several places and not all of them are there at once, so
      every known spelling is tried and the first that parses wins. */
   const OWNER_SEL = [
@@ -93,8 +109,6 @@
     return null;
   }
 
-  /* Wait for it, but not for long. Whatever has not appeared in a couple of
-     seconds is not going to, and the answer to not knowing is to allow. */
   function waitForOwner(ms){
     return new Promise(resolve => {
       const now = readOwner();
@@ -110,123 +124,7 @@
     });
   }
 
-  /* ── The overlay ─────────────────────────────────────────────────────────────
-     A shadow root, so YouTube's stylesheet cannot reach the board's chrome and
-     ours cannot reach theirs. The escape bar is built here, outside the iframe,
-     which is what makes it survive the board failing to load. */
-  function mountOverlay(){
-    if (overlay) return;
-
-    overlay = document.createElement('div');
-    overlay.id = ID;
-    /* Open, not closed. Closed buys almost nothing here — YouTube's scripts
-       could reach the host element either way — and it would put the three
-       escape buttons out of reach of any test. The part that has to be provably
-       reachable is the way out. */
-    const root = overlay.attachShadow({ mode:'open' });
-
-    const css = document.createElement('link');
-    css.rel = 'stylesheet';
-    css.href = chrome.runtime.getURL('ext/overlay.css');
-
-    const wrap = document.createElement('div');
-    wrap.className = 'wrap';
-    wrap.innerHTML =
-      '<div class="frame"><iframe title="HUB"></iframe>' +
-        '<div class="dead"><h2>HUB.</h2><p>the board did not load \u2014 use the buttons below</p></div>' +
-      '</div>' +
-      '<div class="bar">' +
-        '<span class="note">pick a channel to open this tab \u2014 or <b>esc</b> three times to dismiss</span>' +
-        '<button data-act="dismiss">dismiss this tab</button>' +
-        '<button data-act="snooze">pause 15 min</button>' +
-        '<button data-act="off">turn guard off</button>' +
-      '</div>';
-
-    const frame = wrap.querySelector('.frame');
-    const iframe = wrap.querySelector('iframe');
-    /* If the board has not said hello in three seconds, say so rather than
-       showing a black rectangle over a blurred page. */
-    const dead = setTimeout(() => frame.classList.add('dead-on'), 3000);
-    iframe.addEventListener('load', () => { clearTimeout(dead); iframe.classList.add('ready') });
-    iframe.src = chrome.runtime.getURL('index.html') + '?picker=1';
-    board = iframe;
-
-    wrap.addEventListener('click', e => {
-      const act = e.target && e.target.dataset && e.target.dataset.act;
-      if (act) escape(act);
-    });
-
-    root.append(css, wrap);
-    html.appendChild(overlay);                /* sibling of body, so it stays sharp */
-  }
-
-  function dropOverlay(){
-    if (!overlay) return;
-    const el = overlay; overlay = null; board = null;
-    el.remove();
-  }
-
-  /* ── The ways out ────────────────────────────────────────────────────────────
-     Three, and they are the whole of the fault-proofing that the user can see.
-     Each one ends the block now; two of them end it beyond this page. */
-  async function escape(act){
-    if (act === 'snooze') await ask({ type:'snooze', minutes:15 });
-    if (act === 'off')    await ask({ type:'setEnabled', on:false });
-    bypass = true;                            /* 'dismiss', and the other two as well */
-    unveil();
-  }
-
-  /* ── The board asking for a tab ──────────────────────────────────────────────
-     The picker cannot navigate this page itself: it is an extension frame on a
-     youtube.com document, and top navigation across origins is not a thing to
-     rely on. So it asks, and only it can — the message is refused unless it came
-     from the frame this script created, and unless it names a YouTube url.
-
-     The grant is already recorded by the time this arrives; the picker waits for
-     the background to confirm before it asks. */
-  addEventListener('message', e => {
-    if (!board || !e.source || e.source !== board.contentWindow) return;
-    const d = e.data;
-    if (!d || d.hub !== 'go' || typeof d.url !== 'string') return;
-    if (!HubScope.isYouTube(d.url)) return;
-    bypass = false;
-    location.href = d.url;
-  });
-
-  /* Esc three times inside two seconds. The button is the one you find; this is
-     the one that works when the overlay itself has not come up. */
-  let escs = [];
-  addEventListener('keydown', e => {
-    if (e.key !== 'Escape') return;
-    const now = Date.now();
-    escs = escs.filter(t => now - t < 2000).concat(now);
-    if (escs.length >= 3){ escs = []; escape('dismiss') }
-  }, true);
-
-  /* ── Pre-clearing a click ────────────────────────────────────────────────────
-     A video clicked from the channel's own page is that channel's video, and
-     saying so before the navigation happens is what stops the overlay flashing
-     over it while its owner is read.
-
-     Only from a channel page. On a watch page the sidebar is full of other
-     people's videos, and clearing whatever was clicked there would quietly
-     unlock exactly what this is meant to keep out. */
-  addEventListener('click', e => {
-    if (isVeiled() || bypass) return;
-    if (HubScope.classify(location.href).type !== 'channel') return;
-    const a = e.target && e.target.closest && e.target.closest('a[href]');
-    if (!a) return;
-    const page = HubScope.classify(a.href || a.getAttribute('href'));
-    if (page.type === 'watch' && page.videoId) ask({ type:'cleared', videoId:page.videoId });
-  }, true);
-
-  /* ── Learning the channel's other names ──────────────────────────────────────
-     A grant made from the board holds a handle; a watch page usually offers an
-     id. Both name the same channel and there is no way to convert one to the
-     other without asking YouTube — so the channel's own page is asked instead,
-     where the two sit side by side.
-
-     Only ever read from things that describe *this* page. A channel page is
+  /* Only ever read from things that describe *this* page. A channel page is
      full of links to other channels, and widening a grant from one of those
      would unlock exactly what the guard is for. */
   function readSelfId(){
@@ -250,17 +148,78 @@
     look();
   }
 
+  /* ── Add mode ────────────────────────────────────────────────────────────────
+     The guard stands down, and a channel page grows a button that files it into
+     the board. This is the way in for a channel you found rather than one you
+     already had — before it, the only way to add one was to type its url.
+
+     The button writes through the background, because the board's channel list
+     lives in chrome.storage and a content script on youtube.com cannot reach it. */
+  function channelTitle(){
+    /* "Veritasium - YouTube" -> "Veritasium". The og:title has it clean when
+       it is there, which it usually is by the time the button is clicked. */
+    const og = document.querySelector('meta[property="og:title"]');
+    if (og && og.content) return og.content.trim();
+    return document.title.replace(/\s*[-|]\s*YouTube\s*$/i, '').trim();
+  }
+
+  function dropAdd(){
+    if (!addBtn) return;
+    addBtn.remove(); addBtn = null;
+  }
+
+  function mountAdd(scope){
+    if (addBtn) return;
+    let cssUrl, root;
+    try { cssUrl = chrome.runtime.getURL('ext/add.css') } catch { return }
+
+    addBtn = document.createElement('div');
+    addBtn.id = ADD_ID;
+    root = addBtn.attachShadow({ mode:'open' });
+
+    const css = document.createElement('link');
+    css.rel = 'stylesheet'; css.href = cssUrl;
+
+    const b = document.createElement('button');
+    b.className = 'btn';
+    b.innerHTML = '+ add to hub<small>add mode</small>';
+
+    b.addEventListener('click', async () => {
+      if (b.classList.contains('done') || b.classList.contains('have')) return;
+      const res = await ask({ type:'addChannel',
+                              url: HubScope.channelUrl(scope),
+                              name: channelTitle() });
+      if (!res) return;
+      b.classList.add(res.already ? 'have' : 'done');
+      b.innerHTML = (res.already ? 'already on the board' : 'added')
+                  + '<small>' + (res.already ? '' : 'add mode') + '</small>';
+    });
+
+    root.append(css, b);
+    html.appendChild(addBtn);
+  }
+
   /* ── The decision ────────────────────────────────────────────────────────── */
   async function evaluate(){
     const mine = ++seq;
-    if (bypass) return unveil();
+    if (gone) return;
+    if (bypass){ dropAdd(); return unveil() }
     rearm(6000);
 
     const status = await ask({ type:'status' });
-    if (mine !== seq) return;                       /* the url moved on under us */
+    if (mine !== seq || gone) return;
 
-    /* No answer, guard off, or paused — all the same thing: not our page. */
-    if (!status || !status.guarding) return unveil();
+    /* No answer, guard off, paused, dismissed for this tab, or add mode — all
+       the same thing here: not our page. */
+    if (!status || !status.guarding){
+      unveil();
+      /* Add mode is the one "not guarding" that still draws something. */
+      const page = HubScope.classify(location.href);
+      if (status && status.addMode && page.type === 'channel') mountAdd(page.scope);
+      else dropAdd();
+      return;
+    }
+    dropAdd();
 
     const first = HubScope.decide(location.href, status.grant, null);
 
@@ -270,45 +229,64 @@
       return;
     }
 
-    if (first.state === 'block') return block();
+    if (first.state === 'block') return sendToBoard();
 
-    /* Pending: a watch page whose owner has not been read yet. Let it run while
-       we find out. An optimistic unveil is the seamless choice *and* the safe
-       one — if the answer never comes, the page is already free. */
-    unveil();
+    /* Pending: a watch page whose owner has not been read yet.
+       v0.2.0 unveiled here and checked afterwards, which let a video of anyone
+       run for a second before the guard caught up — "the overlay doesn't work"
+       was partly that. The veil stays on while we find out. A video reached
+       from the channel's own page never gets here: the click cleared it before
+       the navigation, so it is already allowed. */
     const owner = await waitForOwner(2500);
-    if (mine !== seq || bypass) return;
-    if (!owner) return;                             /* unknowable → left alone */
+    if (mine !== seq || gone || bypass) return;
+
+    /* Unknowable. Left alone, on purpose — this is the fail-open. */
+    if (!owner) return unveil();
 
     const again = HubScope.decide(location.href, status.grant, owner);
     if (again.state === 'allow'){
       if (first.page && first.page.videoId) ask({ type:'cleared', videoId:first.page.videoId });
-      return;
+      return unveil();
     }
-    block();
+    sendToBoard();
   }
 
-  function block(){
-    veil();
-    try { mountOverlay() }
-    catch (err){
-      /* getURL throws once the extension has been reloaded under a live page.
-         A veil with no board on it is the trap this whole file is written to
-         avoid, so it comes straight off. */
-      console.warn('[HUB] overlay failed, standing down', err);
-      bypass = true;
-      unveil();
-    }
-  }
+  /* ── Pre-clearing a click ────────────────────────────────────────────────────
+     A video clicked from the channel's own page is that channel's video, and
+     saying so before the navigation happens is what keeps it instant.
+
+     Only from a channel page. On a watch page the sidebar is full of other
+     people's videos, and clearing whatever was clicked there would quietly
+     unlock exactly what this is meant to keep out — which is the other half of
+     "every video click that didn't come from a channel page". */
+  addEventListener('click', e => {
+    if (isVeiled() || bypass || gone) return;
+    if (HubScope.classify(location.href).type !== 'channel') return;
+    const a = e.target && e.target.closest && e.target.closest('a[href]');
+    if (!a) return;
+    const page = HubScope.classify(a.href || a.getAttribute('href'));
+    if (page.type === 'watch' && page.videoId) ask({ type:'cleared', videoId:page.videoId });
+  }, true);
+
+  /* Esc three times inside two seconds. The board carries the buttons now, so
+     this is the hatch for a page that is somehow still veiled without one. */
+  let escs = [];
+  addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    const now = Date.now();
+    escs = escs.filter(t => now - t < 2000).concat(now);
+    if (escs.length >= 3){ escs = []; bypass = true; ask({ type:'bypass' }); unveil() }
+  }, true);
 
   /* ── Following YouTube ───────────────────────────────────────────────────────
-     It is one document for a whole session, so there is no second document_start
-     to hang anything on. The poll is the reliable one; the events just make it
-     feel instant. */
+     It is one document for a whole session, so there is no second
+     document_start to hang anything on. The poll is the reliable one; the
+     events just make it feel instant. */
   function onNav(){
-    if (location.href === lastUrl) return;
+    if (location.href === lastUrl || gone) return;
     lastUrl = location.href;
-    evaluate();                                     /* decided again from scratch */
+    veil();                                   /* cover it again while we re-decide */
+    evaluate();
   }
   setInterval(onNav, 400);
   addEventListener('popstate', onNav);

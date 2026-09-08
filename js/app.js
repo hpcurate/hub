@@ -12,15 +12,15 @@ const grid   = $('#grid');
 const chips  = $('#chips');
 const empty  = $('#empty');
 const scrim  = $('#scrim');
-const sheet  = $('#sheet');
+const SHEETS = { ch:$('#sheet-ch'), cat:$('#sheet-cat'), set:$('#sheet-set') };
 
 /* Board state. Not persisted beyond the two dials the eye notices across a
    reload — the size of the cards and how they are sorted. A search term and a
    category filter are things you are in the middle of, not settings. */
-const ui = Store.ui();
+let ui = { ...HubModel.DEFAULT_UI };   /* replaced by the stored one once ready */
 let q = '';
-let sort = ui.sort || 'seen';
-let size = ui.size || 'm';
+let sort = ui.sort;
+let size = ui.size;
 let picked = new Set();          /* empty = every category */
 
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -73,6 +73,9 @@ function list(){
       case 'seen':  return (b.seen || 0) - (a.seen || 0) || byName(a, b);
       case 'stale': return (a.seen || 0) - (b.seen || 0) || byName(a, b);
       case 'added': return b.added - a.added;
+      /* most opened first. Ties fall back to the name so the board does not
+         shuffle every time two channels are level. */
+      case 'clicks': return (b.clicks || 0) - (a.clicks || 0) || byName(a, b);
       case 'name':  return byName(a, b);
       case 'cat':   return (order.has(a.cat) ? order.get(a.cat) : 1e6)
                          - (order.has(b.cat) ? order.get(b.cat) : 1e6) || byName(a, b);
@@ -96,7 +99,9 @@ function build(ch){
     '<div class="card-top"><h3 class="card-name"></h3>' +
       '<button class="card-edit" title="Edit">\u22ef</button></div>' +
     '<p class="card-desc"></p>' +
-    '<div class="card-foot"><span class="tag"></span><span class="seen"></span></div>';
+    '<div class="card-foot"><span class="tag"></span>' +
+      '<span class="count"></span><span class="seen"></span></div>' +
+    '<span class="heat"></span>';
 
   /* The stamp is written on the way out, on the same click that opens the tab,
      so "last viewed" means "last time I actually went there".
@@ -117,6 +122,36 @@ function build(ch){
     openChannel(ch.id);
   });
   return el;
+}
+
+/* ── The heat line ───────────────────────────────────────────────────────────
+   A rule under the card, its colour taken from where this channel sits between
+   the least and the most opened. It is the same gradient for the whole board,
+   so the line only means anything read across all of them — which is why it is
+   mixed against the board's own maximum rather than an absolute number.
+
+   With every channel level (a new board, or nothing clicked yet) there is no
+   scale to be on, so every line sits at the cold end rather than all of them
+   claiming to be the hottest. */
+function paintHeat(el, ch){
+  const max = Store.maxClicks();
+  const t = max > 0 ? Math.min(1, (ch.clicks || 0) / max) : 0;
+  el.style.setProperty('--heat', mix(ui.heatFrom, ui.heatTo, t));
+  el.style.setProperty('--heat-t', t.toFixed(3));
+}
+
+/* Two hex colours and a position between them. CSS could do this with
+   color-mix, but the value is wanted in JS as well — the settings preview
+   draws the same ramp — so it is one function rather than two spellings. */
+function mix(a, b, t){
+  const hex = h => {
+    const m = /^#?([0-9a-f]{6})$/i.exec(String(h || '').trim());
+    const n = m ? parseInt(m[1], 16) : 0;
+    return [n >> 16 & 255, n >> 8 & 255, n & 255];
+  };
+  const [r1, g1, b1] = hex(a), [r2, g2, b2] = hex(b);
+  const c = (x, y) => Math.round(x + (y - x) * t);
+  return 'rgb(' + c(r1, r2) + ',' + c(g1, g2) + ',' + c(b1, b2) + ')';
 }
 
 function paintSeen(el, ch){
@@ -145,6 +180,10 @@ function paint(el, ch){
   t.textContent = cat ? cat.name : 'uncategorised';
   t.classList.toggle('none', !cat);
 
+  const n = el.querySelector('.count');
+  n.textContent = (ch.clicks || 0) + (ch.clicks === 1 ? ' open' : ' opens');
+
+  paintHeat(el, ch);
   paintSeen(el, ch);
 }
 
@@ -177,6 +216,8 @@ function render(){
   const total = Store.channels().length;
 
   grid.dataset.size = size;
+  grid.classList.toggle('no-heat', !ui.showHeat);
+  grid.classList.toggle('no-counts', !ui.showCounts);
   renderChips();
 
   const cats = Store.cats().length;
@@ -238,6 +279,9 @@ function renderChips(){
 
   Store.cats().forEach(c => {
     const n = chans.filter(x => x.cat === c.id).length;
+    /* An empty category still exists — it is only kept out of the bar. One that
+       is switched on stays, or turning it off would need a trip to settings. */
+    if (ui.hideEmpty && !n && !picked.has(c.id)) return;
     const b = document.createElement('button');
     b.className = 'chip' + (picked.has(c.id) ? ' on' : '');
     b.style.setProperty('--c', c.color);
@@ -266,28 +310,37 @@ function toggle(id){ picked.has(id) ? picked.delete(id) : picked.add(id) }
 let openName = null;
 
 function openSheet(name){
+  const el = SHEETS[name];
+  if (!el) return;
   openName = name;
-  $('#f-ch').hidden  = name !== 'ch';
-  $('#f-cat').hidden = name !== 'cat';
-  scrim.hidden = sheet.hidden = false;
-  scrim.classList.remove('out'); sheet.classList.remove('out');
+  Object.entries(SHEETS).forEach(([k, s]) => {
+    if (k === name) return;
+    /* Focus can be sitting in the pane being hidden — the category name field,
+       say — and left there every keyboard shortcut stays dead, because they all
+       stand down while you are typing. Same bug the sheet close had. */
+    if (s.contains(document.activeElement)) document.activeElement.blur();
+    s.hidden = true; s.classList.remove('out');
+  });
+  scrim.hidden = el.hidden = false;
+  scrim.classList.remove('out'); el.classList.remove('out');
 }
 
 function closeSheet(){
   if (!openName) return;
+  const el = SHEETS[openName];
   openName = null;
   /* Focus is still in a field that is about to be hidden. Left there, the
      keyboard shortcuts stay dead until something else is clicked, because
      every one of them stands down while you are typing. */
-  if (sheet.contains(document.activeElement)) document.activeElement.blur();
-  if (REDUCED){ scrim.hidden = sheet.hidden = true; return }
-  scrim.classList.add('out'); sheet.classList.add('out');
+  if (el.contains(document.activeElement)) document.activeElement.blur();
+  if (REDUCED){ scrim.hidden = el.hidden = true; return }
+  scrim.classList.add('out'); el.classList.add('out');
   const done = () => {
-    if (openName) return;            /* reopened mid-animation — leave it alone */
-    scrim.hidden = sheet.hidden = true;
-    scrim.classList.remove('out'); sheet.classList.remove('out');
+    if (openName) return;            /* reopened mid-animation, leave it alone */
+    scrim.hidden = el.hidden = true;
+    scrim.classList.remove('out'); el.classList.remove('out');
   };
-  sheet.addEventListener('animationend', done, { once:true });
+  el.addEventListener('animationend', done, { once:true });
   setTimeout(done, 400);             /* animations can be dropped; the sheet can't stick */
 }
 
@@ -387,18 +440,36 @@ $('#c-del').addEventListener('click', function(){
    visible on the cards behind the sheet as it is picked. */
 let newColor = Store.PALETTE[0];
 
+/* The ten are a shortcut, not the choice. The last swatch is a colour input
+   wearing the same shape as the other ten, so "any colour" is one click deeper
+   than the presets rather than somewhere else entirely. */
 function swatches(current, onPick){
+  const cur = String(current || '').toLowerCase();
   const wrap = document.createElement('div');
   wrap.className = 'swatches';
+
   Store.PALETTE.forEach(hex => {
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = 'sw' + (hex.toLowerCase() === (current || '').toLowerCase() ? ' on' : '');
+    b.className = 'sw' + (hex.toLowerCase() === cur ? ' on' : '');
     b.style.setProperty('--c', hex);
     b.title = hex;
     b.addEventListener('click', () => onPick(hex));
     wrap.appendChild(b);
   });
+
+  const custom = Store.PALETTE.every(h => h.toLowerCase() !== cur);
+  const lab = document.createElement('label');
+  lab.className = 'sw sw-any' + (custom ? ' on' : '');
+  lab.title = 'any colour';
+  lab.style.setProperty('--c', custom ? current : 'var(--tx-2)');
+  const inp = document.createElement('input');
+  inp.type = 'color';
+  inp.value = /^#[0-9a-f]{6}$/i.test(current || '') ? current : '#A78BFA';
+  inp.addEventListener('input', () => onPick(inp.value));
+  lab.appendChild(inp);
+  wrap.appendChild(lab);
+
   return wrap;
 }
 
@@ -424,6 +495,20 @@ function renderCats(){
     const n = document.createElement('span');
     n.className = 'n'; n.textContent = Store.countIn(c.id);
     r.appendChild(n);
+
+    /* Order is the order of the filter bar and of the "category" sort, so it is
+       worth being able to set. Buttons rather than a drag: this is five rows in
+       a sheet, and a drag is the thing that goes wrong on a trackpad. */
+    const cats = Store.cats();
+    const i = cats.findIndex(x => x.id === c.id);
+    [['↑', -1, i > 0], ['↓', 1, i < cats.length - 1]].forEach(([glyph, dir, can]) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'cat-mv'; b.textContent = glyph;
+      b.disabled = !can;
+      b.title = dir < 0 ? 'Move up' : 'Move down';
+      b.addEventListener('click', () => { if (Store.moveCat(c.id, dir)){ renderCats(); render() } });
+      r.appendChild(b);
+    });
 
     const x = document.createElement('button');
     x.className = 'cat-x'; x.type = 'button'; x.textContent = '\u00d7';
@@ -457,16 +542,48 @@ $('#f-newcat').addEventListener('submit', e => {
 
 $('#btn-cats').addEventListener('click', () => { renderCats(); openSheet('cat') });
 $('#btn-add').addEventListener('click', () => openChannel(null));
+$('#btn-set').addEventListener('click', () => { renderSettings(); openSheet('set') });
+
+/* Settings.
+   Every control writes straight through and re-renders the board behind the
+   sheet, so the gradient is chosen by watching the cards change rather than by
+   imagining what two hex values will look like. */
+function renderSettings(){
+  $('#s-heat-from').value = ui.heatFrom;
+  $('#s-heat-to').value = ui.heatTo;
+  $('#s-heat-prev').style.background =
+    'linear-gradient(90deg,' + ui.heatFrom + ',' + ui.heatTo + ')';
+
+  $$('#sheet-set .tog').forEach(t => t.classList.toggle('on', !!ui[t.dataset.ui]));
+
+  /* Add mode only means something with a browser around it. */
+  $('#s-addmode').hidden = !(typeof HubBridge !== 'undefined' && HubBridge.inExt);
+}
+
+['From', 'To'].forEach(end => {
+  $('#s-heat-' + end.toLowerCase()).addEventListener('input', e => {
+    ui = Store.setUi({ ['heat' + end]: e.target.value });
+    renderSettings(); render();
+  });
+});
+
+$$('#sheet-set .tog').forEach(t => t.addEventListener('click', () => {
+  const key = t.dataset.ui;
+  ui = Store.setUi({ [key]: !ui[key] });
+  renderSettings();
+  render();
+  /* Add mode is the one setting the extension has to hear about. */
+  if (key === 'addMode' && typeof HubBridge !== 'undefined' && HubBridge.inExt)
+    HubBridge.ask({ type:'setAddMode', on:ui.addMode });
+}));
 
 /* ── Bar ─────────────────────────────────────────────────────────────────── */
 $('#q').addEventListener('input', e => { q = e.target.value; render() });
 
 const sortSel = $('#sort');
-sortSel.value = sort;
 sortSel.addEventListener('change', e => { sort = e.target.value; Store.setUi({ sort }); render() });
 
 $$('#size .seg-b').forEach(b => {
-  b.classList.toggle('on', b.dataset.size === size);
   b.addEventListener('click', () => {
     size = b.dataset.size;
     $$('#size .seg-b').forEach(x => x.classList.toggle('on', x === b));
@@ -510,6 +627,21 @@ addEventListener('storage', e => {
   if (e.key === 'hub.channels.v1' || e.key === 'hub.cats.v1') location.reload();
 });
 
-render();
+/* Inside the extension the store watches chrome.storage instead, which is also
+   how a channel added from a YouTube page reaches a board already open. */
+Store.onChange(() => { ui = Store.ui(); render() });
+
+/* Start.
+   The store may have to be read out of chrome.storage, which is asynchronous.
+   Nothing else in the app is: it waits here, once, and every read after this
+   comes off the cache. */
+(async () => {
+  await Store.ready;
+  ui = Store.ui();
+  sort = ui.sort; size = ui.size;
+  sortSel.value = sort;
+  $$('#size .seg-b').forEach(b => b.classList.toggle('on', b.dataset.size === size));
+  render();
+})();
 
 })();

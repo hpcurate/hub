@@ -1,103 +1,117 @@
 /* ── Store ────────────────────────────────────────────────────────────────────
-   Everything HUB knows lives in two localStorage keys, and every mutation goes
-   through here so there is exactly one place that writes them. Same choice ROOT
-   makes: no backend, no build step, open the file and it works.
+   One cache, two backings.
 
-   The keys carry a version suffix so a future shape change can migrate rather
-   than silently mis-read the old one.
+   Off disk the board is the only writer and localStorage is the whole story.
+   Inside the extension it is not: the "+ add" button on a YouTube channel page
+   writes through the service worker, which has no localStorage at all. So the
+   extension backs onto chrome.storage.local, which every part of the extension
+   can reach, and watches it for writes that came from somewhere else.
+
+   The cache is what keeps that from spreading. Reads stay synchronous — the
+   whole of app.js is unchanged by this — and the only new rule is that the
+   first render waits on `Store.ready`.
 */
 const Store = (() => {
 
-  const K_CH = 'hub.channels.v1';
-  const K_CAT = 'hub.cats.v1';
-  const K_UI  = 'hub.ui.v1';
+  const { KEYS, PALETTE, DEFAULT_UI, uid,
+          normUrl, nameFromUrl, makeChannel, fillChannel, fillCat, seedCats } = HubModel;
 
-  /* The colour-coding palette. Ten hues that all sit at roughly the same
-     lightness, so no category shouts louder than another on a dark ground —
-     the first is ROOT's accent, and the rest are picked to stay apart from it
-     and from each other. */
-  const PALETTE = ['#A78BFA','#7DD3FC','#5CDB7D','#E0A060','#E06060',
-                   '#F0A5D0','#8FE3D0','#9AA8FF','#D6E060','#C4B5A0'];
+  /* chrome.storage.local, or nothing. `chrome` exists in places that cannot
+     store anything, so the capability is what gets tested, not the namespace. */
+  const area = (() => {
+    try { return (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) || null }
+    catch { return null }
+  })();
 
-  /* Defaults, not law: they are seeded once on a cold start and are renamable,
-     recolourable and deletable like any category made later. */
-  const DEFAULT_CATS = [
-    { name:'learning', color:'#A78BFA' },
-    { name:'making',   color:'#E0A060' },
-    { name:'tech',     color:'#7DD3FC' },
-    { name:'music',    color:'#F0A5D0' },
-    { name:'watch',    color:'#5CDB7D' },
-  ];
+  let channels = [], cats = [], ui = { ...DEFAULT_UI };
+  const listeners = new Set();
 
-  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  /* Our own writes come back through the change listener. Remembering what we
+     last wrote is what stops a save turning into a reload turning into a
+     re-render, on every keystroke. */
+  const written = new Map();
 
-  function read(key, fallback){
-    try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback }
-    catch { return fallback }          /* a corrupt key is an empty board, not a crash */
-  }
-  function write(key, val){
-    try { localStorage.setItem(key, JSON.stringify(val)) } catch {}
-  }
+  const parse = (raw, fallback) => {
+    if (raw == null) return fallback;
+    if (typeof raw !== 'string') return raw;          /* chrome.storage keeps types */
+    try { return JSON.parse(raw) } catch { return fallback }
+  };
 
-  let cats = read(K_CAT, null);
-  if (!Array.isArray(cats) || !cats.length){
-    cats = DEFAULT_CATS.map(c => ({ id:uid(), ...c }));
-    write(K_CAT, cats);
-  }
-  let channels = read(K_CH, []);
-  if (!Array.isArray(channels)) channels = [];
+  function adopt(bag){
+    const rawCh  = parse(bag[KEYS.CH],  null);
+    const rawCat = parse(bag[KEYS.CAT], null);
+    const rawUi  = parse(bag[KEYS.UI],  null);
 
-  const saveCh  = () => write(K_CH, channels);
-  const saveCat = () => write(K_CAT, cats);
-
-  /* ── URL handling ──────────────────────────────────────────────────────────
-     A pasted URL is the one field that is always there, so the name is derived
-     from it when the name box is left blank. YouTube spells a channel four
-     ways; the handle is the only one that reads like a name, and for /channel/
-     ids there is nothing better to show without a network call. */
-  function normUrl(raw){
-    const s = (raw || '').trim();
-    if (!s) return '';
-    return /^https?:\/\//i.test(s) ? s : 'https://' + s.replace(/^\/+/, '');
+    channels = Array.isArray(rawCh) ? rawCh.map(fillChannel) : [];
+    cats = Array.isArray(rawCat) && rawCat.length
+      ? rawCat.map(fillCat).sort((a, b) => a.order - b.order)
+      : null;
+    ui = { ...DEFAULT_UI, ...(rawUi && typeof rawUi === 'object' ? rawUi : {}) };
+    return cats === null;                             /* true: needs seeding */
   }
 
-  function nameFromUrl(raw){
-    const s = normUrl(raw);
-    if (!s) return '';
-    let path;
-    try { path = new URL(s).pathname } catch { return '' }
-    const seg = path.split('/').filter(Boolean);
-    if (!seg.length) return '';
-    if (seg[0].startsWith('@')) return seg[0];
-    if (['c','user','channel'].includes(seg[0]) && seg[1]) return decodeURIComponent(seg[1]);
-    return decodeURIComponent(seg[0]);
+  async function readAll(){
+    if (!area){
+      const bag = {};
+      for (const k of Object.values(KEYS)){
+        try { bag[k] = localStorage.getItem(k) } catch { bag[k] = null }
+      }
+      return bag;
+    }
+    return area.get(Object.values(KEYS));
+  }
+
+  function save(key, value){
+    const json = JSON.stringify(value);
+    written.set(key, json);
+    if (area) area.set({ [key]: json }).catch(() => {});
+    else { try { localStorage.setItem(key, json) } catch {} }
+  }
+
+  const saveCh  = () => save(KEYS.CH, channels);
+  const saveCat = () => { cats.forEach((c, i) => { c.order = i }); save(KEYS.CAT, cats) };
+  const saveUi  = () => save(KEYS.UI, ui);
+
+  const announce = () => listeners.forEach(fn => { try { fn() } catch {} });
+
+  const ready = (async () => {
+    const seed = adopt(await readAll());
+    if (seed){ cats = seedCats(); saveCat() }
+  })();
+
+  /* Somebody else wrote — the "+ add" button, or the board in another tab.
+     Only the extension has anyone else; off disk this never fires. */
+  if (area && chrome.storage.onChanged){
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName !== 'local') return;
+      let mine = true;
+      for (const k of Object.keys(changes)){
+        if (!Object.values(KEYS).includes(k)) continue;
+        if (written.get(k) !== changes[k].newValue) mine = false;
+      }
+      if (mine) return;
+      readAll().then(bag => { adopt(bag); announce() });
+    });
   }
 
   return {
-    PALETTE,
+    ready, PALETTE,
+    onChange(fn){ listeners.add(fn); return () => listeners.delete(fn) },
 
     /* ── Reads ─────────────────────────────────────────────────────────── */
     channels: () => channels.slice(),
     cats:     () => cats.slice(),
     cat:      id => cats.find(c => c.id === id) || null,
     countIn:  id => channels.filter(c => c.cat === id).length,
+    maxClicks: () => channels.reduce((m, c) => Math.max(m, c.clicks || 0), 0),
     nameFromUrl, normUrl,
 
-    ui:      () => read(K_UI, {}),
-    setUi:   patch => write(K_UI, { ...read(K_UI, {}), ...patch }),
+    ui:    () => ({ ...ui }),
+    setUi(patch){ ui = { ...ui, ...patch }; saveUi(); return { ...ui } },
 
     /* ── Channels ──────────────────────────────────────────────────────── */
-    addChannel({ url, name, desc, cat }){
-      const u = normUrl(url);
-      const ch = {
-        id: uid(),
-        url: u,
-        name: (name || '').trim() || nameFromUrl(u) || 'untitled',
-        desc: (desc || '').trim(),
-        cat: cat || '',
-        added: Date.now(),
-        seen: null,                    /* null is "never viewed", not "viewed at 0" */
-      };
+    addChannel(data){
+      const ch = makeChannel(data);
       channels.push(ch); saveCh();
       return ch;
     },
@@ -115,17 +129,20 @@ const Store = (() => {
 
     removeChannel(id){ channels = channels.filter(c => c.id !== id); saveCh() },
 
-    /* The whole point of "time since last viewed": one stamp, written on the
-       click that opens YouTube. */
+    /* One click is two facts: when it last happened, and how often it has.
+       The first orders "last viewed", the second is the heat. */
     touch(id){
       const ch = channels.find(c => c.id === id);
       if (!ch) return;
-      ch.seen = Date.now(); saveCh();
+      ch.seen = Date.now();
+      ch.clicks = (ch.clicks || 0) + 1;
+      saveCh();
     },
 
     /* ── Categories ────────────────────────────────────────────────────── */
     addCat(name, color){
-      const c = { id:uid(), name:(name || '').trim() || 'untitled',
+      const c = { id:uid(), order:cats.length,
+                  name:(name || '').trim() || 'untitled',
                   color: color || PALETTE[cats.length % PALETTE.length] };
       cats.push(c); saveCat();
       return c;
@@ -140,10 +157,20 @@ const Store = (() => {
       return c;
     },
 
+    /* Reorder by one place. Buttons rather than dragging: the list is five or
+       six rows in a sheet, and a drag is a thing to get wrong on a trackpad. */
+    moveCat(id, dir){
+      const i = cats.findIndex(c => c.id === id);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= cats.length) return false;
+      [cats[i], cats[j]] = [cats[j], cats[i]];
+      saveCat();
+      return true;
+    },
+
     /* Deleting a category never deletes channels — they fall back to
        uncategorised, which the board shows in muted grey and the filter can
-       still reach. Losing a channel because its category went is not a trade
-       anyone would take. */
+       still reach. */
     removeCat(id){
       cats = cats.filter(c => c.id !== id);
       let touched = false;

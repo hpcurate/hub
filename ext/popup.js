@@ -21,10 +21,12 @@ function draw(s){
     return;
   }
 
-  const paused = s.enabled && !s.guarding;
-  state.className = 'state' + (s.guarding ? ' on' : paused ? ' paused' : '');
+  const paused = s.enabled && !s.addMode && Date.now() < (s.snoozeUntil || 0);
+
+  state.className = 'state' + (s.guarding ? ' on' : s.addMode ? ' adding' : paused ? ' paused' : '');
 
   if (s.guarding)      t.textContent = 'guarding youtube';
+  else if (s.addMode)  t.textContent = 'add mode — not guarding';
   else if (paused){
     const left = Math.max(0, Math.ceil((s.snoozeUntil - Date.now()) / 60000));
     t.textContent = 'paused, ' + left + ' min left';
@@ -33,7 +35,10 @@ function draw(s){
 
   toggle.textContent = s.enabled ? 'turn off' : 'turn on';
   toggle.classList.toggle('y', !s.enabled);
-  $('#snooze').hidden = !s.enabled;
+  $('#snooze').hidden = !s.enabled || s.addMode;
+  $('#addmode').hidden = !s.enabled;
+  $('#addmode-k').textContent = s.addMode ? 'on' : 'off';
+  $('#addmode').classList.toggle('y', s.addMode);
 }
 
 let current = null;
@@ -47,6 +52,11 @@ $('#toggle').addEventListener('click', async () => {
 
 $('#snooze').addEventListener('click', async () => {
   draw(current = await ask({ type:'snooze', minutes:15 }));
+});
+
+$('#addmode').addEventListener('click', async () => {
+  if (!current) return refresh();
+  draw(current = await ask({ type:'setAddMode', on:!current.addMode }));
 });
 
 $('#board').addEventListener('click', () => {

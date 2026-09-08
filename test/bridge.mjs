@@ -1,10 +1,10 @@
 // The board in its three lives (jsdom).
-//   cd hub/test && npm install && node picker.mjs
+//   cd hub/test && npm install && node bridge.mjs
 // index.html is the same file whether it is opened off disk, opened as the
-// extension's own page, or embedded in the overlay on a blurred YouTube tab.
+// extension's own page, or landed on by a YouTube tab the guard sent here.
 // Only js/bridge.js knows the difference, and this is what it has to get right:
-// off disk the anchor must be left alone, and in the other two the click must
-// become a granted tab rather than an ungranted one.
+// off disk the anchor must be left alone; in the extension's own tab a click
+// opens a granted new tab; on a blocked tab it takes that same tab in.
 import { JSDOM, ResourceLoader, VirtualConsole } from 'jsdom';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -24,16 +24,18 @@ class LocalLoader extends ResourceLoader {
 }
 
 const CHANNEL = { id:'c1', url:'https://www.youtube.com/@keep', name:'@keep',
-                  desc:'', cat:'', added:1, seen:null };
+                  desc:'', cat:'', added:1, seen:null, clicks:0 };
+const BLOCKED_FROM = 'https://www.youtube.com/feed/subscriptions';
 
-async function boot({ picker = false, withChrome = true } = {}){
+async function boot({ blocked = false, withChrome = true } = {}){
   const errors = [];
   const vc = new VirtualConsole();
   vc.on('jsdomError', e => errors.push(String(e.detail?.message || e.message)));
 
   const sent = [], posted = [];
   const dom = new JSDOM(html, {
-    url: 'http://localhost/hub/index.html' + (picker ? '?picker=1' : ''),
+    url: 'http://localhost/hub/index.html'
+       + (blocked ? '?blocked=1&from=' + encodeURIComponent(BLOCKED_FROM) : ''),
     runScripts:'dangerously', resources:new LocalLoader(),
     pretendToBeVisual:true, virtualConsole:vc,
     beforeParse(w){
@@ -53,8 +55,12 @@ async function boot({ picker = false, withChrome = true } = {}){
 
   const w = dom.window;
   await new Promise(r => w.addEventListener('load', r));
+  await w.eval('Store.ready');
   w.document.addEventListener('click', e => { const a = e.target.closest?.('a'); if (a) e.preventDefault() }, true);
-  return { dom, w, sent, posted, errors };
+  /* jsdom will not navigate, but it says so, which is the only signal there is
+     that the bridge took the tab somewhere. */
+  const navigated = () => errors.some(e => /navigation/i.test(e));
+  return { dom, w, sent, posted, errors, navigated };
 }
 
 let pass = 0; const fails = [];
@@ -79,35 +85,42 @@ console.log('\nopened off disk');
      hit.href === CHANNEL.url && hit.target === '_blank');
   clickCard(t.w);
   await wait(30);
-  ok('the bridge takes no part in it', t.sent.length === 0 && t.posted.length === 0);
+  ok('the bridge takes no part in it', t.sent.length === 0);
+  ok('the blocked bar is nowhere', t.w.document.getElementById('blocked').hidden);
   ok('the card still stamps its view',
      JSON.parse(t.w.localStorage.getItem('hub.channels.v1'))[0].seen !== null);
+  ok('and counts the click', JSON.parse(t.w.localStorage.getItem('hub.channels.v1'))[0].clicks === 1);
   ok('the page booted clean', t.errors.length === 0, t.errors[0]);
   t.dom.window.close();
 }
 
 console.log('\nthe extension\u2019s own page');
 {
-  const t = await boot({ picker:false, withChrome:true });
+  const t = await boot({ withChrome:true });
   ok('the bridge sees the extension', t.w.eval('HubBridge.inExt') === true);
-  ok('and knows it is not the picker', t.w.eval('HubBridge.picker') === false);
+  ok('and knows this tab was not blocked', t.w.eval('HubBridge.blocked') === false);
+  ok('so there is no blocked bar', t.w.document.getElementById('blocked').hidden);
   const ev = clickCard(t.w);
   await wait(40);
   ok('the anchor is stopped', ev.defaultPrevented);
   const msg = t.sent.find(m => m.type === 'openInTab');
   ok('a granted tab is asked for', !!msg, JSON.stringify(t.sent));
-  ok('and it names the channel', msg && msg.scope.kind === 'handle' && msg.scope.key === '@keep',
-     JSON.stringify(msg));
-  ok('the url goes with it', msg && msg.url === CHANNEL.url);
-  ok('nothing was posted at a parent', t.posted.length === 0);
+  ok('and it names the channel', msg && msg.scope.kind === 'handle' && msg.scope.key === '@keep');
+  ok('this tab stays where it is', !t.navigated());
   t.dom.window.close();
 }
 
-console.log('\nthe picker, over a blurred youtube');
+console.log('\na tab the guard sent here');
 {
-  const t = await boot({ picker:true, withChrome:true });
-  ok('the bridge knows it is the picker', t.w.eval('HubBridge.picker') === true);
-  ok('and says so on the document', t.w.document.documentElement.classList.contains('picker'));
+  const t = await boot({ blocked:true, withChrome:true });
+  ok('the bridge knows the tab was blocked', t.w.eval('HubBridge.blocked') === true);
+  ok('and where it was going', t.w.eval('HubBridge.from') === BLOCKED_FROM);
+  ok('the blocked bar is shown', !t.w.document.getElementById('blocked').hidden);
+  ok('and the page says so', t.w.document.documentElement.classList.contains('blocked'));
+  ok('it names what was blocked',
+     /youtube\.com\/feed\/subscriptions/.test(t.w.document.getElementById('blocked-where').textContent),
+     t.w.document.getElementById('blocked-where').textContent);
+
   const ev = clickCard(t.w);
   await wait(40);
   ok('the anchor is stopped', ev.defaultPrevented);
@@ -115,22 +128,31 @@ console.log('\nthe picker, over a blurred youtube');
   ok('this tab is unlocked first', !!msg, JSON.stringify(t.sent));
   ok('for the channel that was clicked', msg && msg.scope.key === '@keep');
   ok('no second tab is asked for', !t.sent.some(m => m.type === 'openInTab'));
-  const go = t.posted.find(d => d && d.hub === 'go');
-  ok('and only then is the page asked to go', !!go, JSON.stringify(t.posted));
-  ok('to the channel', go && go.url === CHANNEL.url);
-  ok('the view is stamped here too',
-     JSON.parse(t.w.localStorage.getItem('hub.channels.v1'))[0].seen !== null);
+  ok('and this tab is taken in', t.navigated());
+  t.dom.window.close();
+}
+
+console.log('\nthe ways out, on the board');
+for (const [act, expect] of [['back', null], ['snooze', 'snooze'], ['off', 'setEnabled']]){
+  const t = await boot({ blocked:true, withChrome:true });
+  const btn = t.w.document.querySelector('#blocked [data-act="' + act + '"]');
+  ok('the ' + act + ' button is there', !!btn);
+  btn.dispatchEvent(new t.w.MouseEvent('click', { bubbles:true }));
+  await wait(60);
+  if (expect) ok(act + ' tells the background', t.sent.some(m => m.type === expect), JSON.stringify(t.sent));
+  ok(act + ' dismisses the tab, or the guard would send it straight back',
+     t.sent.some(m => m.type === 'bypass'), JSON.stringify(t.sent));
+  ok(act + ' goes back to where it was headed', t.navigated());
   t.dom.window.close();
 }
 
 console.log('\nwhen the background will not grant');
 {
-  const t = await boot({ picker:true, withChrome:true });
+  const t = await boot({ blocked:true, withChrome:true });
   t.w.chrome.runtime.sendMessage = (msg, cb) => { t.sent.push(msg); setTimeout(() => cb(null), 0) };
   clickCard(t.w);
   await wait(40);
-  ok('the tab is not sent anywhere it would only bounce off',
-     !t.posted.some(d => d && d.hub === 'go'), JSON.stringify(t.posted));
+  ok('the tab is not sent anywhere it would only bounce off', !t.navigated());
   t.dom.window.close();
 }
 

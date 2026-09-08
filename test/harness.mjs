@@ -56,6 +56,10 @@ await new Promise(r => w.addEventListener('load', r));
 // and never a window property. eval runs in that same scope; this is the only
 // way in from outside, and it is the harness reaching in, not the app leaking.
 w.eval('window.Store = Store');
+// Since v0.3.0 the store may have to be read out of chrome.storage, so it
+// resolves a promise before the first render. Off disk that is a microtask,
+// but waiting on it is what the app itself does.
+await w.eval('Store.ready');
 // target=_blank would raise "Not implemented: navigation" on every card click.
 d.addEventListener('click', e => { const a = e.target.closest?.('a'); if (a) e.preventDefault() }, true);
 
@@ -84,7 +88,8 @@ console.log('\nadding a channel');
 const cats = w.Store.cats();
 click($('#btn-add'));
 await tick();
-ok('the sheet opened on the channel form', !$('#sheet').hidden && !$('#f-ch').hidden);
+ok('the sheet opened on the channel pane', !$('#sheet-ch').hidden);
+ok('and the other panes stayed shut', $('#sheet-cat').hidden && $('#sheet-set').hidden);
 ok('no system dialog was reached', systemDialogs === 0);
 
 $('#c-url').value  = 'youtube.com/@veritasium';
@@ -126,7 +131,7 @@ w.Store.addChannel({ url:'https://youtube.com/@zulu',     name:'zulu',     desc:
 const all = w.Store.channels();
 all[1].seen = Date.now() - 40 * 24 * 3600e3;      // 40 days ago
 w.Store.updateChannel(all[1].id, {});             // write the mutation through
-click($('#btn-cats')); click($('[data-close]'));  // close whatever is open
+click($('#btn-cats')); click($('#sheet-cat [data-close]'));   // close whatever is open
 $('#sort').value = 'name'; $('#sort').dispatchEvent(new w.Event('change', { bubbles:true }));
 await tick();
 
@@ -178,7 +183,8 @@ ok('the size choice is remembered', JSON.parse(w.localStorage.getItem('hub.ui.v1
 console.log('\ncategories');
 click($('#btn-cats'));
 await tick();
-ok('the category sheet opens', !$('#sheet').hidden && !$('#f-cat').hidden);
+ok('the category pane opens', !$('#sheet-cat').hidden);
+ok('and it is a different pane from the channel one', $('#sheet-ch').hidden);
 ok('every category has a row', $$('#cat-list .cat-r').length === 5);
 
 const row = $$('#cat-list .cat-r')[1];
@@ -232,7 +238,7 @@ $('#c-name').value = 'zulu renamed';
 submit($('#f-ch'));
 await tick();
 ok('the edit is saved', w.Store.channels().some(c => c.name === 'zulu renamed'));
-ok('the sheet closed', $('#sheet').hidden || $('#sheet').classList.contains('out'));
+ok('the pane closed', $('#sheet-ch').hidden || $('#sheet-ch').classList.contains('out'));
 
 click($$('#grid .card').find(c => c.querySelector('.card-name').textContent === 'zulu renamed')
         .querySelector('.card-edit'));
@@ -243,13 +249,118 @@ click($('#c-del'));
 await tick();
 ok('the second click deletes it', w.Store.channels().length === 2);
 
+console.log('\nclick heat');
+{
+  const chans = w.Store.channels();
+  const hot = chans.find(c => c.name === 'aardvark');
+  const cold = chans.find(c => c.name !== 'aardvark');
+  w.Store.touch(hot.id); w.Store.touch(hot.id); w.Store.touch(hot.id);
+  /* cold already has exactly one open: its card was clicked back in the
+     "time since last viewed" section, which is what put a stamp on it. */
+  await tick();
+
+  $('#sort').value = 'clicks'; $('#sort').dispatchEvent(new w.Event('change', { bubbles:true }));
+  await tick();
+  ok('most clicked sorts the most opened first',
+     $$('#grid .card .card-name').map(e => e.textContent)[0] === 'aardvark');
+  ok('the count is on the card',
+     $$('#grid .card').find(c => c.querySelector('.card-name').textContent === 'aardvark')
+       .querySelector('.count').textContent === '3 opens');
+  ok('one open is not "1 opens"',
+     $$('#grid .card').find(c => c.querySelector('.card-name').textContent !== 'aardvark')
+       .querySelector('.count').textContent === '1 open');
+
+  /* jsdom serialises rgb() without the spaces a browser keeps, so the two are
+     compared with whitespace out of the way rather than by exact string. */
+  const rgb = s => s.replace(/\s+/g, '');
+  const heatOf = name => rgb($$('#grid .card')
+    .find(c => c.querySelector('.card-name').textContent === name)
+    .style.getPropertyValue('--heat'));
+  ok('the hottest card sits at the top of the gradient',
+     heatOf('aardvark') === rgb('rgb(167, 139, 250)'), heatOf('aardvark'));
+  ok('a colder card does not', heatOf('aardvark') !== heatOf(cold.name));
+}
+
+console.log('\nsettings');
+click($('#btn-set'));
+await tick();
+ok('the settings pane opens', !$('#sheet-set').hidden);
+ok('and it is its own pane', $('#sheet-ch').hidden && $('#sheet-cat').hidden);
+
+ok('click counts are off by default', $('#grid').classList.contains('no-counts'));
+click($('#sheet-set [data-ui="showCounts"]'));
+await tick();
+ok('the toggle turns them on', !$('#grid').classList.contains('no-counts'));
+ok('and it is remembered', JSON.parse(w.localStorage.getItem('hub.ui.v1')).showCounts === true);
+
+click($('#sheet-set [data-ui="showHeat"]'));
+await tick();
+ok('the heat line can be turned off', $('#grid').classList.contains('no-heat'));
+click($('#sheet-set [data-ui="showHeat"]'));
+await tick();
+
+set($('#s-heat-to'), '#ff0000');
+await tick();
+ok('the gradient can be recoloured',
+   $$('#grid .card').find(c => c.querySelector('.card-name').textContent === 'aardvark')
+     .style.getPropertyValue('--heat').replace(/\s+/g, '') === 'rgb(255,0,0)');
+ok('and that is remembered too', JSON.parse(w.localStorage.getItem('hub.ui.v1')).heatTo === '#ff0000');
+
+const chipNames = () => [...$('#chips').children].map(c => c.textContent);
+const emptyCat = w.Store.cats().find(c => w.Store.countIn(c.id) === 0);
+ok('an empty category is in the bar to begin with',
+   chipNames().some(t => t.startsWith(emptyCat.name)));
+click($('#sheet-set [data-ui="hideEmpty"]'));
+await tick();
+ok('hide empty keeps it out of the bar', !chipNames().some(t => t.startsWith(emptyCat.name)));
+ok('categories that hold something stay', chipNames().length > 1, chipNames().join());
+click($('#sheet-set [data-ui="hideEmpty"]'));
+await tick();
+click($('#sheet-set [data-close]'));
+await tick();
+
+console.log('\nordering and colouring categories');
+click($('#btn-cats'));
+await tick();
+{
+  const before = w.Store.cats().map(c => c.name);
+  const row = $$('#cat-list .cat-r')[2];
+  click(row.querySelectorAll('.cat-mv')[0]);          // up
+  await tick();
+  const after = w.Store.cats().map(c => c.name);
+  ok('a category can be moved up', after[1] === before[2] && after[2] === before[1],
+     after.join());
+  ok('the order is persisted',
+     JSON.parse(w.localStorage.getItem('hub.cats.v1'))[1].name === before[2]);
+  ok('the filter bar follows it',
+     [...$('#chips').children][2].textContent.startsWith(after[1]));
+
+  ok('the first row cannot move up', $$('#cat-list .cat-r')[0].querySelectorAll('.cat-mv')[0].disabled);
+  ok('the last row cannot move down',
+     [...$$('#cat-list .cat-r')].pop().querySelectorAll('.cat-mv')[1].disabled);
+}
+{
+  const c = w.Store.cats()[0];
+  const any = $$('#cat-list .cat-r')[0].querySelector('.sw-any input[type="color"]');
+  ok('there is a colour well beside the ten swatches', !!any);
+  set(any, '#123456');
+  await tick();
+  ok('a category can take a colour that is not in the palette',
+     w.Store.cat(c.id).color === '#123456', w.Store.cat(c.id).color);
+  ok('and the board takes it',
+     !!$$('#grid .card').find(el => el.style.getPropertyValue('--c') === '#123456')
+     || w.Store.countIn(c.id) === 0);
+}
+click($('#sheet-cat [data-close]'));
+await tick();
+
 console.log('\nkeys');
 d.dispatchEvent(new w.KeyboardEvent('keydown', { key:'n', bubbles:true }));
 await tick();
-ok('n opens a new channel', !$('#f-ch').hidden && $('#c-url').value === '');
+ok('n opens a new channel', !$('#sheet-ch').hidden && $('#c-url').value === '');
 d.dispatchEvent(new w.KeyboardEvent('keydown', { key:'Escape', bubbles:true }));
 await tick();
-ok('escape closes the sheet', $('#sheet').hidden || $('#sheet').classList.contains('out'));
+ok('escape closes the pane', $('#sheet-ch').hidden || $('#sheet-ch').classList.contains('out'));
 
 console.log('\nsummary');
 ok('no system dialog was reached at any point', systemDialogs === 0, systemDialogs + ' calls');

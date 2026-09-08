@@ -235,7 +235,10 @@ kbd{
 .sheet{
   position:fixed;z-index:41;left:50%;top:50%;translate:-50% -50%;
   width:min(520px,calc(100vw - 40px));max-height:calc(100vh - 60px);overflow:auto;
-  padding:22px 22px 18px;
+  /* The bottom used to be 18px, which put the red delete button hard against
+     the edge of the pane with nothing under it. The action row is the last
+     thing in every sheet, so the room goes here and fixes all three. */
+  padding:22px 22px 28px;
   background:var(--s1);border:var(--bw) solid var(--bd-2);border-radius:var(--r-sheet);
   box-shadow:var(--shadow-chrome);
   animation:sheet-in calc(.26s * var(--mo)) var(--ease-out);
@@ -263,7 +266,7 @@ kbd{
 .pickwrap{display:flex;align-items:flex-start;gap:8px}
 .pick{display:flex;flex-wrap:wrap;gap:5px;flex:1}
 
-.sh-acts{display:flex;align-items:center;gap:8px;padding-top:6px}
+.sh-acts{display:flex;align-items:center;gap:8px;padding-top:14px;margin-top:2px}
 .grow{flex:1}
 
 /* ── Category manager ────────────────────────────────────────────────────── */
@@ -319,3 +322,131 @@ kbd{
   outline:none;font:500 11px/1 var(--mono);letter-spacing:.04em;
 }
 .newcat-in::placeholder{color:var(--mu)}
+
+/* ── Click heat ──────────────────────────────────────────────────────────────
+   A rule along the bottom of the card, coloured by where this channel sits
+   between the least and most opened on the board. It is a rule and not a bar
+   because it has to be readable across thirty cards at a glance without any
+   one of them looking like it is loading something. --heat and --heat-t are
+   set per card by the renderer. */
+.card .heat{
+  position:absolute;left:0;right:0;bottom:0;height:2px;z-index:2;
+  background:var(--heat,var(--mu));
+  /* the coldest end fades out rather than drawing a full-width grey rule under
+     everything that has never been opened */
+  opacity:calc(.34 + var(--heat-t,0) * .66);
+  transition:background var(--dur-2) var(--ease),opacity var(--dur-2) var(--ease);
+}
+.grid.no-heat .card .heat{display:none}
+
+.card .count{
+  flex:0 0 auto;
+  font:500 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--mu);
+}
+.grid.no-counts .card .count{display:none}
+
+/* ── Settings ───────────────────────────────────────────────────────────── */
+.sh-s{margin:-10px 0 4px;font-size:12px;line-height:1.5;color:var(--tx-2)}
+.row-s{margin:-2px 0 2px;font-size:11.5px;line-height:1.5;color:var(--tx-2)}
+
+.heat-pick{display:flex;align-items:center;gap:10px}
+.heat-prev{
+  flex:1;height:14px;border-radius:var(--r-pill);
+  border:var(--bw) solid var(--bd);
+}
+.col-in{display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer}
+.col-in span{font:500 9px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--tx-2)}
+
+/* A colour input is a different control in every browser. Stripping it back to
+   a swatch is the only way it sits beside the ten presets without looking like
+   a form field that wandered in. */
+input[type="color"]{
+  -webkit-appearance:none;appearance:none;
+  width:26px;height:26px;padding:0;cursor:pointer;
+  background:none;border:var(--bw) solid var(--bd-2);border-radius:var(--r1);
+}
+input[type="color"]::-webkit-color-swatch-wrapper{padding:2px}
+input[type="color"]::-webkit-color-swatch{border:none;border-radius:2px}
+input[type="color"]::-moz-color-swatch{border:none;border-radius:2px}
+
+.togs{display:flex;flex-direction:column;gap:6px}
+.tog{
+  display:flex;align-items:center;gap:10px;width:100%;padding:9px 11px;text-align:left;
+  background:var(--bg);border:var(--bw) solid var(--bd);border-radius:var(--r1);
+  font:400 12.5px/1.4 var(--mono);color:var(--tx);
+  transition:border-color var(--dur-1) var(--ease),background var(--dur-1) var(--ease);
+}
+.tog:hover{border-color:var(--bd-2)}
+.tog span{flex:1}
+.tog em{display:block;font-style:normal;font-size:11px;color:var(--tx-2);margin-top:2px}
+/* the switch itself: a pill with a knob, drawn from two tokens */
+.tog b{
+  flex:0 0 auto;position:relative;width:30px;height:17px;border-radius:var(--r-pill);
+  background:var(--s2);border:var(--bw) solid var(--bd-2);
+  transition:background var(--dur-1) var(--ease),border-color var(--dur-1) var(--ease);
+}
+.tog b::after{
+  content:'';position:absolute;top:2px;left:2px;width:11px;height:11px;
+  border-radius:var(--r-pill);background:var(--mu);
+  transition:transform var(--dur-1) var(--ease-out),background var(--dur-1) var(--ease);
+}
+.tog.on b{background:var(--yd);border-color:var(--y)}
+.tog.on b::after{background:var(--y);transform:translateX(13px)}
+
+/* ── Category rows ──────────────────────────────────────────────────────── */
+.cat-mv{
+  flex:0 0 auto;width:20px;height:22px;border-radius:var(--r1);
+  color:var(--mu);font-size:12px;line-height:1;
+  transition:background var(--dur-1) var(--ease),color var(--dur-1) var(--ease);
+}
+.cat-mv:hover:not(:disabled){background:var(--s2);color:var(--tx)}
+.cat-mv:disabled{opacity:.25;cursor:default}
+
+/* the eleventh swatch: any colour at all */
+.sw-any{
+  position:relative;display:inline-flex;align-items:center;justify-content:center;
+  background:var(--c);
+  box-shadow:inset 0 0 0 1px var(--bd-2);
+}
+.sw-any::after{
+  content:'';position:absolute;inset:0;border-radius:var(--r-pill);
+  background:conic-gradient(#e06060,#e0a060,#d6e060,#5cdb7d,#8fe3d0,#7dd3fc,#9aa8ff,#a78bfa,#f0a5d0,#e06060);
+  opacity:.9;
+}
+.sw-any.on::after{opacity:0}
+.sw-any input[type="color"]{
+  position:absolute;inset:0;width:100%;height:100%;
+  opacity:0;border:none;cursor:pointer;
+}
+.cat-r .sw-any{width:14px;height:14px}
+
+/* ── Blocked ─────────────────────────────────────────────────────────────────
+   The bar a guarded YouTube tab lands under. It is the first thing on the page
+   and it is sticky, because it is the only way back — the overlay that used to
+   carry those buttons is gone, and a way out you have to scroll to find is not
+   one. */
+.blocked-bar{
+  position:sticky;top:0;z-index:30;
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:11px 26px;
+  background:var(--s1);border-bottom:var(--bw) solid var(--yb);
+  animation:card-in calc(.3s * var(--mo)) var(--ease-out);
+}
+.bl-k{
+  padding:3px 8px;border-radius:var(--r1);
+  background:var(--yd);color:var(--y);
+  font:700 9px/1.4 var(--mono);letter-spacing:.18em;text-transform:uppercase;
+}
+.bl-w{
+  font:500 11px/1 var(--mono);color:var(--tx);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:38ch;
+}
+.bl-note{
+  flex:1;min-width:120px;
+  font:500 10px/1.4 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--tx-2);
+}
+/* The board's own bar sticks too, and two sticky rows would stack. Under the
+   blocked bar the controls scroll away instead — the block is the thing that
+   must stay reachable. */
+html.blocked .bar{position:static}
+html.blocked .h-top{padding-top:22px}

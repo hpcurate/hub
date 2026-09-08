@@ -21,6 +21,7 @@
        transition:background var(--dur-2) var(--ease)}
   .state.on .dot{background:var(--gr)}
   .state.paused .dot{background:var(--or)}
+  .state.adding .dot{background:var(--y)}
 
   .rows{display:flex;flex-direction:column;gap:6px}
   button{
@@ -48,10 +49,12 @@
 <div class="rows">
   <button id="toggle">…</button>
   <button id="snooze">pause 15 min<span class="k">temporary</span></button>
+  <button id="addmode">add mode<span class="k" id="addmode-k">off</span></button>
   <button id="board" class="y">open the board</button>
 </div>
 
-<p class="foot" id="foot">The board is the way in. Anything else on YouTube gets it put in front of you.</p>
+<p class="foot" id="foot">The board is the way in. Anything else on YouTube sends the tab to it.
+   <b>Add mode</b> stands the guard down and puts a <b>+ add</b> button on channel pages.</p>
 
 <script src="popup.js"></script>
 </body>

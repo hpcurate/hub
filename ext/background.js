@@ -13,7 +13,7 @@
    variable that matters. storage.session survives the restart; the in-memory
    map is only a write queue.
 */
-importScripts('scope.js');
+importScripts('scope.js', 'model.js');
 
 const SETTINGS = { enabled:true, snoozeUntil:0 };
 
@@ -38,19 +38,51 @@ const editGrant = (tabId, fn) => serial(async () => {
 
 const grantFor = async tabId => (await readGrants())[String(tabId)] || null;
 
-/* Is the guard actually on right now? One answer, so the popup, the overlay and
-   the content script can never disagree about it. */
-async function guarding(){
-  const s = await getSettings();
-  return s.enabled && Date.now() >= (s.snoozeUntil || 0);
+/* ── Dismissals ──────────────────────────────────────────────────────────────
+   "Go back anyway" on the board, and the triple-escape. Per tab and timed, so
+   a dismissal is a decision about now rather than a switch left flipped. */
+const BYPASS_MIN = 20;
+const readBypass  = async () => (await chrome.storage.session.get({ bypass:{} })).bypass;
+const setBypass = (tabId, until) => serial(async () => {
+  const bag = await readBypass();
+  if (until) bag[String(tabId)] = until; else delete bag[String(tabId)];
+  await chrome.storage.session.set({ bypass:bag });
+});
+async function bypassed(tabId){
+  if (tabId == null) return false;
+  const until = (await readBypass())[String(tabId)] || 0;
+  return Date.now() < until;
 }
 
+/* Add mode is a board setting, not a second copy of one. It lives in the same
+   hub.ui.v1 the board writes, so the popup, the board and the guard cannot
+   disagree about whether it is on. */
+async function uiSettings(){
+  const bag = await chrome.storage.local.get([HubModel.KEYS.UI]);
+  const raw = bag[HubModel.KEYS.UI];
+  try { return { ...HubModel.DEFAULT_UI, ...(typeof raw === 'string' ? JSON.parse(raw) : raw || {}) } }
+  catch { return { ...HubModel.DEFAULT_UI } }
+}
+async function patchUi(patch){
+  const next = { ...(await uiSettings()), ...patch };
+  await chrome.storage.local.set({ [HubModel.KEYS.UI]: JSON.stringify(next) });
+  return next;
+}
+
+/* Is the guard actually on for this tab right now? One answer, computed once,
+   so the popup, the board and the content script can never disagree about it.
+   Five different things turn it off and every one of them is a way out. */
 async function statusFor(tabId){
   const s = await getSettings();
+  const u = await uiSettings();
+  const paused = Date.now() < (s.snoozeUntil || 0);
+  const dismissed = await bypassed(tabId);
   return {
     enabled: s.enabled,
     snoozeUntil: s.snoozeUntil || 0,
-    guarding: await guarding(),
+    addMode: !!u.addMode,
+    bypassed: dismissed,
+    guarding: s.enabled && !paused && !u.addMode && !dismissed,
     grant: tabId == null ? null : await grantFor(tabId),
   };
 }
@@ -103,6 +135,48 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
         if (tabId != null) await editGrant(tabId, () => null);
         return reply(await statusFor(tabId));
 
+      /* Dismissed for this tab. Sent by the board's "go back anyway" and by the
+         triple-escape, and it has to outlive the navigation that follows it —
+         which is why it is here and not a variable in the content script. */
+      case 'bypass':
+        if (tabId != null) await setBypass(tabId, Date.now() + BYPASS_MIN * 60e3);
+        return reply(await statusFor(tabId));
+
+      case 'setAddMode':
+        await patchUi({ addMode: !!msg.on });
+        return reply(await statusFor(msg.tabId != null ? msg.tabId : tabId));
+
+      /* Filed from the "+ add" button on a channel page. The board's list lives
+         in chrome.storage.local, which a content script on youtube.com cannot
+         touch and this worker can — so the write happens here, in the one record
+         shape both ends share. */
+      case 'addChannel': {
+        const url = HubModel.normUrl(msg.url);
+        const scope = HubScope.parse(url);
+        if (!scope) return reply({ ...(await statusFor(tabId)), added:false });
+
+        const out = await serial(async () => {
+          const bag = await chrome.storage.local.get([HubModel.KEYS.CH]);
+          const raw = bag[HubModel.KEYS.CH];
+          let list;
+          try { list = JSON.parse(typeof raw === 'string' ? raw : '[]') } catch { list = [] }
+          if (!Array.isArray(list)) list = [];
+
+          /* Same channel, whichever way its url is spelled. */
+          const already = list.some(c => {
+            const s2 = HubScope.parse(c.url);
+            return s2 && s2.kind === scope.kind && s2.key === scope.key;
+          });
+          if (already) return { already:true };
+
+          list.push(HubModel.makeChannel({ url, name:msg.name, desc:'', cat:'' }));
+          await chrome.storage.local.set({ [HubModel.KEYS.CH]: JSON.stringify(list) });
+          return { already:false };
+        });
+
+        return reply({ ...(await statusFor(tabId)), added:!out.already, already:out.already });
+      }
+
       case 'setEnabled':
         await setSettings({ enabled: !!msg.on });
         return reply(await statusFor(msg.tabId != null ? msg.tabId : tabId));
@@ -125,7 +199,10 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   return true;                       /* the reply is async */
 });
 
-chrome.tabs.onRemoved.addListener(tabId => { editGrant(tabId, () => null) });
+chrome.tabs.onRemoved.addListener(tabId => {
+  editGrant(tabId, () => null);
+  setBypass(tabId, 0);
+});
 
 /* ── One thing deliberately not done ─────────────────────────────────────────
    A tab that wanders off YouTube and comes back still holds its old grant, so

@@ -4,7 +4,7 @@
   "description": "jsdom harness for HUB — not part of the site. cd test && npm install && node harness.mjs",
   "type": "module",
   "scripts": {
-    "test": "node harness.mjs && node scope.mjs && node guard.mjs && node picker.mjs"
+    "test": "node harness.mjs && node scope.mjs && node guard.mjs && node bridge.mjs"
   },
   "devDependencies": { "jsdom": "^24.1.0" }
 }

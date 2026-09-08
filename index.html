@@ -21,6 +21,19 @@
 </head>
 <body>
 
+<!-- ── Blocked ──────────────────────────────────────────────────────────────
+     Shown only when a guarded YouTube tab was sent here. It carries the ways
+     out: since the overlay is gone, this page *is* the block, so the way back
+     has to be on it. Hidden and inert everywhere else. -->
+<div class="blocked-bar" id="blocked" hidden>
+  <span class="bl-k">blocked</span>
+  <span class="bl-w" id="blocked-where"></span>
+  <span class="bl-note">pick a channel to go in</span>
+  <button class="btn btn-s" data-act="back">go back anyway</button>
+  <button class="btn btn-s" data-act="snooze">pause 15 min</button>
+  <button class="btn btn-s" data-act="off">turn guard off</button>
+</div>
+
 <div class="app">
 
   <!-- ── Title band ───────────────────────────────────────────────────────
@@ -51,6 +64,7 @@
         <option value="stale">longest unwatched</option>
         <option value="added">recently added</option>
         <option value="name">name</option>
+        <option value="clicks">most clicked</option>
         <option value="cat">category</option>
       </select>
     </label>
@@ -62,6 +76,7 @@
     </div>
 
     <button class="btn" id="btn-cats" title="Manage categories">categories</button>
+    <button class="btn" id="btn-set" title="Settings">settings</button>
   </div>
 
   <!-- ── Category filter ──────────────────────────────────────────────── -->
@@ -78,14 +93,16 @@
 </div>
 
 <!-- ── Sheets ─────────────────────────────────────────────────────────────
-     One scrim, one panel, contents swapped per sheet. Both sheets are forms,
-     so Enter submits and Esc closes without a browser dialog anywhere. -->
+     Three panes, three elements. They used to be one box whose contents were
+     swapped, which is what "seperate the categories pane and the new channel
+     pane" was about — nothing announced which one you were looking at, and the
+     box kept the size of whichever had been in it last. One scrim behind all
+     three, because only one is ever open. -->
 <div class="scrim" id="scrim" hidden></div>
 
-<section class="sheet" id="sheet" hidden aria-modal="true" role="dialog">
-
-  <!-- channel add / edit -->
-  <form class="sheet-in" id="f-ch" hidden>
+<!-- ── new / edit channel ───────────────────────────────────────────────── -->
+<section class="sheet" id="sheet-ch" hidden aria-modal="true" role="dialog" aria-label="Channel">
+  <form class="sheet-in" id="f-ch">
     <h2 class="sh-t" id="f-ch-t">new channel</h2>
 
     <label class="row">
@@ -103,7 +120,7 @@
 
     <label class="row">
       <span class="row-k">description</span>
-      <textarea id="c-desc" rows="3" placeholder="what it is, why it's here"></textarea>
+      <textarea id="c-desc" rows="3" placeholder="what it is, why it&#39;s here"></textarea>
     </label>
 
     <div class="row">
@@ -121,10 +138,14 @@
       <button type="submit" class="btn btn-y" id="c-save">save</button>
     </div>
   </form>
+</section>
 
-  <!-- category manager -->
-  <div class="sheet-in" id="f-cat" hidden>
+<!-- ── categories ───────────────────────────────────────────────────────── -->
+<section class="sheet" id="sheet-cat" hidden aria-modal="true" role="dialog" aria-label="Categories">
+  <div class="sheet-in">
     <h2 class="sh-t">categories</h2>
+    <p class="sh-s">order them, colour them, rename them. deleting one leaves its channels uncategorised.</p>
+
     <div class="cat-list" id="cat-list"></div>
 
     <form class="cat-new" id="f-newcat">
@@ -138,13 +159,41 @@
       <button type="button" class="btn" data-close>done</button>
     </div>
   </div>
-
 </section>
 
-<!-- The channel-scope rules and the extension bridge. Both are inert when the
-     page is opened off disk: HubScope is pure functions, and HubBridge answers
-     "no" to everything when there is no extension around it. -->
+<!-- ── settings ─────────────────────────────────────────────────────────── -->
+<section class="sheet" id="sheet-set" hidden aria-modal="true" role="dialog" aria-label="Settings">
+  <div class="sheet-in">
+    <h2 class="sh-t">settings</h2>
+
+    <div class="row">
+      <span class="row-k">click heat</span>
+      <p class="row-s">the line under each card, from the channel you open least to the one you open most</p>
+      <div class="heat-pick">
+        <label class="col-in"><input type="color" id="s-heat-from"><span>least</span></label>
+        <div class="heat-prev" id="s-heat-prev"></div>
+        <label class="col-in"><input type="color" id="s-heat-to"><span>most</span></label>
+      </div>
+    </div>
+
+    <div class="togs">
+      <button type="button" class="tog" data-ui="showHeat"><span>show the heat line</span><b></b></button>
+      <button type="button" class="tog" data-ui="showCounts"><span>show click counts</span><b></b></button>
+      <button type="button" class="tog" data-ui="hideEmpty"><span>hide empty categories</span><b></b></button>
+      <button type="button" class="tog" data-ui="addMode" id="s-addmode" hidden>
+        <span>add mode <em>&mdash; stops the guard, puts a + add button on channel pages</em></span><b></b>
+      </button>
+    </div>
+
+    <div class="sh-acts">
+      <span class="grow"></span>
+      <button type="button" class="btn" data-close>done</button>
+    </div>
+  </div>
+</section>
+
 <script src="ext/scope.js"></script>
+<script src="ext/model.js"></script>
 <script src="js/store.js"></script>
 <script src="js/bridge.js"></script>
 <script src="js/app.js"></script>
