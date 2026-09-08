@@ -1,0 +1,321 @@
+/* ── HUB ──────────────────────────────────────────────────────────────────────
+   One board of YouTube channels. Everything draws with tokens.css, so the whole
+   sheet reads like a ROOT app sheet: hairline borders, tiny radii, mono body
+   text, one accent, uppercase micro-labels.
+*/
+
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;background:var(--bg);color:var(--tx);
+  font:400 14px/1.55 var(--mono);
+  -webkit-font-smoothing:antialiased;
+  overflow-y:scroll;                 /* no reflow when a filter shortens the board */
+}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;background:none;border:none;padding:0}
+::selection{background:var(--yb);color:var(--tx)}
+
+/* The board is a desktop window, so it gets a real max measure rather than
+   running to the edge of a 34" screen. */
+.app{max-width:1560px;margin:0 auto;padding:0 26px 80px}
+
+/* ── Title band ──────────────────────────────────────────────────────────────
+   ROOT's shape: label line, then the wordmark, with the primary action pinned
+   to the wordmark's row on the right. */
+.h-top{position:relative;padding:34px 0 14px}
+.h-label{
+  margin:0 0 8px;min-height:20px;
+  font:500 10px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
+  color:var(--tx-2);                 /* a label, so --tx-2 and never --mu */
+}
+.h-logo-row{display:flex;align-items:center;min-height:max(var(--band-row),calc(var(--title-px) * var(--title-cap)))}
+.h-logo{
+  margin:0;line-height:1;
+  font:700 var(--title-px)/1 var(--head);letter-spacing:-.03em;text-transform:uppercase;
+  text-box:trim-both cap alphabetic;  /* the box is the caps, so it centres on what you see */
+  text-shadow:var(--title-sh-x) 0 0 var(--title-sh-c);
+}
+/* The dot is part of the word: same colour, same shadow, no idea of its own. */
+.h-logo em{font-style:normal}
+.h-acts{position:absolute;right:0;bottom:14px}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+.btn{
+  display:inline-flex;align-items:center;gap:6px;
+  height:34px;padding:0 14px;
+  background:var(--s1);border:var(--bw) solid var(--bd);border-radius:var(--r1);
+  font:500 12px/1 var(--mono);letter-spacing:.04em;color:var(--tx);
+  transition:background var(--dur-1) var(--ease),border-color var(--dur-1) var(--ease),
+             color var(--dur-1) var(--ease),transform var(--dur-1) var(--ease);
+}
+.btn:hover{background:var(--s2);border-color:var(--bd-2)}
+.btn:active{transform:translateY(1px)}
+.btn-y{background:var(--y);border-color:var(--y);color:var(--on-y);font-weight:700}
+.btn-y:hover{background:var(--y);border-color:var(--y);filter:brightness(1.08)}
+.btn-s{height:28px;padding:0 10px;font-size:11px}
+.btn-danger{color:var(--re);border-color:color-mix(in srgb,var(--re) 30%,transparent)}
+.btn-danger:hover{background:color-mix(in srgb,var(--re) 12%,transparent);border-color:var(--re)}
+.btn-danger.armed{background:var(--re);border-color:var(--re);color:var(--on-y)}
+:focus-visible{outline:var(--bw) solid var(--y);outline-offset:2px}
+
+/* ── Control bar ─────────────────────────────────────────────────────────── */
+.bar{
+  position:sticky;top:0;z-index:10;
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:12px 0;background:var(--bg);
+  border-bottom:var(--bw) solid var(--bd);
+}
+.field{
+  display:flex;align-items:center;gap:8px;height:34px;padding:0 12px;
+  background:var(--s1);border:var(--bw) solid var(--bd);border-radius:var(--r1);
+  transition:border-color var(--dur-1) var(--ease);
+}
+.field:focus-within{border-color:var(--yb)}
+.field-k{font:500 10px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--tx-2)}
+.search{flex:1 1 240px;max-width:420px}
+.search input{flex:1;min-width:0;background:none;border:none;outline:none;font-size:13px}
+.search input::placeholder{color:var(--mu)}
+.search input::-webkit-search-cancel-button{-webkit-appearance:none}
+.ic{width:15px;height:15px;flex:0 0 auto;fill:none;stroke:var(--tx-2);stroke-width:2;
+    stroke-linecap:round;stroke-linejoin:round}
+kbd{
+  flex:0 0 auto;padding:1px 5px;border:var(--bw) solid var(--bd);border-radius:3px;
+  font:500 10px/1.4 var(--mono);color:var(--mu);
+}
+.field:focus-within kbd{opacity:0}
+.select select{background:none;border:none;outline:none;font-size:13px;cursor:pointer}
+.select select option{background:var(--s1);color:var(--tx)}
+
+/* Segmented control — ROOT's .seg-b, pill-shaped, accent when on. */
+.seg{display:flex;gap:4px}
+.seg-b{
+  width:30px;height:34px;
+  background:var(--s1);border:var(--bw) solid var(--bd);border-radius:var(--r-pill);
+  font:500 11px/1 var(--mono);color:var(--tx-2);
+  transition:background var(--dur-1) var(--ease),color var(--dur-1) var(--ease),
+             border-color var(--dur-1) var(--ease);
+}
+.seg-b:hover{border-color:var(--bd-2);color:var(--tx)}
+.seg-b.on{background:var(--y);border-color:var(--y);color:var(--on-y);font-weight:700}
+
+/* ── Category chips ──────────────────────────────────────────────────────── */
+.chips{display:flex;flex-wrap:wrap;gap:6px;padding:14px 0 16px}
+.chip{
+  --c:var(--tx-2);
+  display:inline-flex;align-items:center;gap:7px;height:28px;padding:0 11px;
+  background:var(--s1);border:var(--bw) solid var(--bd);border-radius:var(--r1);
+  font:500 11px/1 var(--mono);letter-spacing:.04em;color:var(--tx-2);
+  transition:background var(--dur-1) var(--ease),border-color var(--dur-1) var(--ease),
+             color var(--dur-1) var(--ease);
+}
+.chip::before{
+  content:'';width:7px;height:7px;border-radius:var(--r-pill);background:var(--c);
+  transition:box-shadow var(--dur-1) var(--ease);
+}
+.chip.all::before{display:none}
+.chip:hover{border-color:var(--bd-2);color:var(--tx)}
+.chip.on{
+  color:var(--tx);
+  background:color-mix(in srgb,var(--c) 13%,transparent);
+  border-color:color-mix(in srgb,var(--c) 46%,transparent);
+}
+.chip.on::before{box-shadow:0 0 0 3px color-mix(in srgb,var(--c) 22%,transparent)}
+.chip .n{color:var(--mu);font-size:10px}
+.chip.on .n{color:var(--tx-2)}
+
+/* ── The board ───────────────────────────────────────────────────────────────
+   auto-fill + minmax is the whole answer to "items that scale to window size":
+   the column count follows the window, and the columns share the remainder, so
+   there is never a horizontal scrollbar and never a ragged right edge. The size
+   control moves the minimum, not the count. */
+.grid{
+  display:grid;gap:12px;
+  grid-template-columns:repeat(auto-fill,minmax(min(var(--min),100%),1fr));
+}
+.grid[data-size="s"]{--min:200px}
+.grid[data-size="m"]{--min:268px}
+.grid[data-size="l"]{--min:352px}
+
+/* ── Card ────────────────────────────────────────────────────────────────────
+   The whole tile is the link: an absolutely-positioned anchor underneath, with
+   the text above it and pointer-events off, so a click anywhere opens YouTube
+   and the browser still shows the real URL on hover. The edit button is the one
+   thing that takes pointer events back. */
+.card{
+  --c:var(--tx-2);
+  position:relative;isolation:isolate;overflow:hidden;
+  display:flex;flex-direction:column;gap:9px;
+  min-height:132px;padding:14px 15px 12px;
+  background:var(--s1);border:var(--bw) solid var(--bd);border-radius:var(--r2);
+  transition:background var(--dur-2) var(--ease),border-color var(--dur-2) var(--ease),
+             transform var(--dur-2) var(--ease);
+}
+/* the colour spine — the category, read at a glance across the whole board */
+.card::before{
+  content:'';position:absolute;inset:0 auto 0 0;width:3px;background:var(--c);
+  opacity:.85;transition:width var(--dur-2) var(--ease),opacity var(--dur-2) var(--ease);
+}
+/* a wash of the same colour, kept faint enough that ten of them still read as
+   one board rather than ten posters */
+.card::after{
+  content:'';position:absolute;inset:0;z-index:-1;pointer-events:none;
+  background:linear-gradient(100deg,color-mix(in srgb,var(--c) 7%,transparent),transparent 62%);
+  opacity:0;transition:opacity var(--dur-2) var(--ease);
+}
+.card:hover{border-color:color-mix(in srgb,var(--c) 40%,var(--bd));transform:translateY(-2px)}
+.card:hover::before{width:4px;opacity:1}
+.card:hover::after{opacity:1}
+.card:has(.card-hit:active){transform:translateY(0);background:var(--press)}
+
+.card-hit{position:absolute;inset:0;z-index:1}
+.card > *:not(.card-hit){position:relative;z-index:2;pointer-events:none}
+.card-edit{pointer-events:auto}
+
+.card-top{display:flex;align-items:flex-start;gap:8px}
+.card-name{
+  margin:0;flex:1;min-width:0;
+  font:600 17px/1.2 var(--head);letter-spacing:-.01em;
+  overflow-wrap:anywhere;
+}
+.card-edit{
+  flex:0 0 auto;width:24px;height:22px;margin:-2px -4px 0 0;
+  border-radius:var(--r1);color:var(--mu);
+  font:700 13px/1 var(--mono);letter-spacing:.08em;
+  opacity:0;transition:opacity var(--dur-1) var(--ease),color var(--dur-1) var(--ease),
+                        background var(--dur-1) var(--ease);
+}
+.card:hover .card-edit,.card-edit:focus-visible{opacity:1}
+.card-edit:hover{background:var(--s2);color:var(--tx)}
+
+.card-desc{
+  margin:0;flex:1;
+  font-size:12.5px;line-height:1.5;color:var(--tx-2);
+  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:4;overflow:hidden;
+}
+.card-desc.none{color:var(--mu)}
+
+.card-foot{display:flex;align-items:center;gap:8px;padding-top:2px}
+.tag{
+  display:inline-flex;align-items:center;gap:6px;
+  font:500 10px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;
+  color:var(--c);
+}
+.tag::before{content:'';width:6px;height:6px;border-radius:var(--r-pill);background:var(--c)}
+.tag.none{color:var(--mu)}
+.tag.none::before{background:var(--mu)}
+.seen{
+  margin-left:auto;flex:0 0 auto;
+  font:500 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--tx-2);
+}
+.seen.never{color:var(--mu)}
+.seen.fresh{color:var(--y)}
+
+/* ── Entry ───────────────────────────────────────────────────────────────────
+   Cards that are new to the board rise in, staggered by index (set inline as
+   --i by the renderer). Reordering is a FLIP in app.js, not a transition — the
+   grid moves items by changing their box, which nothing here could animate. */
+@keyframes card-in{from{opacity:0;transform:translateY(10px) scale(.985)}to{opacity:1;transform:none}}
+.card.in{animation:card-in calc(.34s * var(--mo)) var(--ease-out) backwards;
+         animation-delay:calc(var(--i,0) * .022s * var(--mo))}
+
+/* ── Empty state ─────────────────────────────────────────────────────────── */
+.empty{padding:76px 0;text-align:center;animation:card-in calc(.3s * var(--mo)) var(--ease-out)}
+.empty-t{margin:0 0 6px;font:600 22px/1.2 var(--head);letter-spacing:-.01em;color:var(--tx)}
+.empty-s{margin:0;font-size:12.5px;color:var(--tx-2)}
+
+/* ── Sheet ───────────────────────────────────────────────────────────────── */
+.scrim{
+  position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.6);
+  animation:fade calc(.2s * var(--mo)) var(--ease);
+}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+.scrim.out{animation:fade calc(.2s * var(--mo)) var(--ease) reverse forwards}
+
+.sheet{
+  position:fixed;z-index:41;left:50%;top:50%;translate:-50% -50%;
+  width:min(520px,calc(100vw - 40px));max-height:calc(100vh - 60px);overflow:auto;
+  padding:22px 22px 18px;
+  background:var(--s1);border:var(--bw) solid var(--bd-2);border-radius:var(--r-sheet);
+  box-shadow:var(--shadow-chrome);
+  animation:sheet-in calc(.26s * var(--mo)) var(--ease-out);
+}
+@keyframes sheet-in{from{opacity:0;translate:-50% -46%;scale:.98}to{opacity:1;translate:-50% -50%;scale:1}}
+.sheet.out{animation:sheet-in calc(.2s * var(--mo)) var(--ease) reverse forwards}
+.sh-t{
+  margin:0 0 18px;
+  font:700 26px/1 var(--head);letter-spacing:-.02em;text-transform:uppercase;
+  text-shadow:var(--title-sh-x) 0 0 var(--title-sh-c);
+}
+.sheet-in{display:flex;flex-direction:column;gap:14px}
+
+.row{display:flex;flex-direction:column;gap:6px}
+.row-k{font:500 10px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--tx-2)}
+.row input,.row textarea{
+  width:100%;padding:9px 11px;
+  background:var(--bg);border:var(--bw) solid var(--bd);border-radius:var(--r1);
+  outline:none;font-size:13px;resize:vertical;
+  transition:border-color var(--dur-1) var(--ease);
+}
+.row input:focus,.row textarea:focus{border-color:var(--yb)}
+.row input::placeholder,.row textarea::placeholder{color:var(--mu)}
+
+.pickwrap{display:flex;align-items:flex-start;gap:8px}
+.pick{display:flex;flex-wrap:wrap;gap:5px;flex:1}
+
+.sh-acts{display:flex;align-items:center;gap:8px;padding-top:6px}
+.grow{flex:1}
+
+/* ── Category manager ────────────────────────────────────────────────────── */
+.cat-list{display:flex;flex-direction:column;gap:6px;max-height:44vh;overflow:auto}
+.cat-r{
+  --c:var(--tx-2);
+  display:flex;align-items:center;gap:9px;padding:7px 9px;
+  background:var(--bg);border:var(--bw) solid var(--bd);border-radius:var(--r1);
+  transition:border-color var(--dur-1) var(--ease);
+}
+.cat-r:hover{border-color:var(--bd-2)}
+.cat-r input.cat-n{
+  flex:1;min-width:0;background:none;border:none;outline:none;font-size:13px;padding:2px 0;
+  border-bottom:var(--bw) solid transparent;transition:border-color var(--dur-1) var(--ease);
+}
+.cat-r input.cat-n:focus{border-bottom-color:var(--yb)}
+.cat-r .n{font:500 10px/1 var(--mono);letter-spacing:.1em;color:var(--mu)}
+.cat-x{width:24px;height:24px;border-radius:var(--r1);color:var(--mu);font-size:14px;
+       transition:background var(--dur-1) var(--ease),color var(--dur-1) var(--ease)}
+.cat-x:hover{background:color-mix(in srgb,var(--re) 14%,transparent);color:var(--re)}
+.cat-x.armed{background:var(--re);color:var(--on-y)}
+
+.swatches{display:flex;flex-wrap:wrap;gap:5px}
+.sw{
+  width:18px;height:18px;border-radius:var(--r-pill);
+  background:var(--c);border:var(--bw) solid transparent;
+  transition:transform var(--dur-1) var(--ease-out),box-shadow var(--dur-1) var(--ease);
+}
+.sw:hover{transform:scale(1.15)}
+.sw.on{box-shadow:0 0 0 2px var(--bg),0 0 0 3px var(--c)}
+.cat-r .swatches{flex:0 0 auto}
+.cat-r .sw{width:14px;height:14px}
+
+.cat-new{
+  display:flex;align-items:center;gap:9px;padding:9px;
+  background:var(--bg);border:var(--bw) dashed var(--bd-2);border-radius:var(--r1);
+}
+.cat-new input{flex:1;min-width:0;background:none;border:none;outline:none;font-size:13px}
+.cat-new input::placeholder{color:var(--mu)}
+
+/* Narrow window: the band and the bar are the only things that need saying. */
+@media (max-width:640px){
+  .app{padding:0 16px 60px}
+  :root{--title-px:40px}
+  .h-acts{position:static;margin-top:12px}
+}
+
+/* The inline "new category" input inside the channel sheet's picker. Sized to
+   sit in the chip row it appears in, so the row does not jump. */
+.newcat-in{
+  height:28px;padding:0 11px;min-width:120px;flex:0 1 150px;
+  background:var(--bg);border:var(--bw) solid var(--yb);border-radius:var(--r1);
+  outline:none;font:500 11px/1 var(--mono);letter-spacing:.04em;
+}
+.newcat-in::placeholder{color:var(--mu)}

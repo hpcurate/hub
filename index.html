@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0e0e0e">
+  <title>HUB</title>
+
+  <!-- One glyph, no binary. HUB is opened in a desktop tab, not installed. -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='4' fill='%230e0e0e'/%3E%3Ccircle cx='16' cy='16' r='4' fill='%23A78BFA'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%23dedede' stroke-width='2'/%3E%3C/svg%3E">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <!-- Grotesk for titles, JetBrains Mono for text — the two faces the request
+       named. Both are ROOT's own: "Grotesk" is what its type pairings call
+       Space Grotesk, and --mono is JetBrains Mono in every pairing it ships. -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/hub.css">
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ── Title band ───────────────────────────────────────────────────────
+       Same shape as ROOT's: a small label line, then the wordmark with its
+       accent shadow, with the page's one primary action at the far right. -->
+  <header class="h-top">
+    <p class="h-label" id="meta">&nbsp;</p>
+    <div class="h-logo-row">
+      <h1 class="h-logo">HUB<em>.</em></h1>
+    </div>
+    <div class="h-acts">
+      <button class="btn btn-y" id="btn-add" title="Add a channel  (n)">+ channel</button>
+    </div>
+  </header>
+
+  <!-- ── Controls ─────────────────────────────────────────────────────── -->
+  <div class="bar">
+    <label class="field search">
+      <svg viewBox="0 0 24 24" class="ic" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input id="q" type="search" placeholder="search channels" autocomplete="off" spellcheck="false">
+      <kbd>/</kbd>
+    </label>
+
+    <label class="field select">
+      <span class="field-k">sort</span>
+      <select id="sort">
+        <option value="seen">last viewed</option>
+        <option value="stale">longest unwatched</option>
+        <option value="added">recently added</option>
+        <option value="name">name</option>
+        <option value="cat">category</option>
+      </select>
+    </label>
+
+    <div class="seg" id="size" role="group" aria-label="Card size">
+      <button class="seg-b" data-size="s">S</button>
+      <button class="seg-b on" data-size="m">M</button>
+      <button class="seg-b" data-size="l">L</button>
+    </div>
+
+    <button class="btn" id="btn-cats" title="Manage categories">categories</button>
+  </div>
+
+  <!-- ── Category filter ──────────────────────────────────────────────── -->
+  <div class="chips" id="chips"></div>
+
+  <!-- ── The board ────────────────────────────────────────────────────── -->
+  <main class="grid" id="grid" data-size="m"></main>
+
+  <div class="empty" id="empty" hidden>
+    <p class="empty-t" id="empty-t">nothing here yet</p>
+    <p class="empty-s" id="empty-s">add a channel to start the board</p>
+  </div>
+
+</div>
+
+<!-- ── Sheets ─────────────────────────────────────────────────────────────
+     One scrim, one panel, contents swapped per sheet. Both sheets are forms,
+     so Enter submits and Esc closes without a browser dialog anywhere. -->
+<div class="scrim" id="scrim" hidden></div>
+
+<section class="sheet" id="sheet" hidden aria-modal="true" role="dialog">
+
+  <!-- channel add / edit -->
+  <form class="sheet-in" id="f-ch" hidden>
+    <h2 class="sh-t" id="f-ch-t">new channel</h2>
+
+    <label class="row">
+      <span class="row-k">youtube url</span>
+      <!-- text, not url: type="url" refuses anything without a scheme, and a
+           url copied out of the address bar or off a page is very often pasted
+           bare. The store adds the https:// instead. -->
+      <input id="c-url" type="text" inputmode="url" placeholder="youtube.com/@handle" required spellcheck="false">
+    </label>
+
+    <label class="row">
+      <span class="row-k">name</span>
+      <input id="c-name" type="text" placeholder="taken from the url if left blank" spellcheck="false">
+    </label>
+
+    <label class="row">
+      <span class="row-k">description</span>
+      <textarea id="c-desc" rows="3" placeholder="what it is, why it's here"></textarea>
+    </label>
+
+    <div class="row">
+      <span class="row-k">category</span>
+      <div class="pickwrap">
+        <div class="pick" id="c-cat"></div>
+        <button type="button" class="btn btn-s" id="c-newcat">+ new</button>
+      </div>
+    </div>
+
+    <div class="sh-acts">
+      <button type="button" class="btn btn-danger" id="c-del" hidden>delete</button>
+      <span class="grow"></span>
+      <button type="button" class="btn" data-close>cancel</button>
+      <button type="submit" class="btn btn-y" id="c-save">save</button>
+    </div>
+  </form>
+
+  <!-- category manager -->
+  <div class="sheet-in" id="f-cat" hidden>
+    <h2 class="sh-t">categories</h2>
+    <div class="cat-list" id="cat-list"></div>
+
+    <form class="cat-new" id="f-newcat">
+      <input id="n-name" type="text" placeholder="new category" maxlength="24" spellcheck="false" required>
+      <div class="swatches" id="n-sw"></div>
+      <button type="submit" class="btn btn-y">add</button>
+    </form>
+
+    <div class="sh-acts">
+      <span class="grow"></span>
+      <button type="button" class="btn" data-close>done</button>
+    </div>
+  </div>
+
+</section>
+
+<script src="js/store.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

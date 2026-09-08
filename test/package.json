@@ -1,0 +1,8 @@
+{
+  "name": "hub-test",
+  "private": true,
+  "description": "jsdom harness for HUB — not part of the site. cd test && npm install && node harness.mjs",
+  "type": "module",
+  "scripts": { "test": "node harness.mjs" },
+  "devDependencies": { "jsdom": "^24.1.0" }
+}

@@ -1,0 +1,71 @@
+/* ── Design tokens ────────────────────────────────────────────────────────────
+   HUB borrows ROOT's token layer rather than inventing a second one: same
+   palette (VOID), same shape anchors, same motion scale, same names. If a value
+   here differs from ROOT's, that is a bug, not a decision — the request was
+   "same design language", and the cheapest way to keep that true over time is
+   for the variables to be literally the same variables.
+
+   What is *not* carried over is ROOT's appearance engine: no themes, no dials,
+   no prefs.js. HUB is one board in one look, and the request said "very
+   simple". The tokens stay because they are how ROOT's look is spelled, not
+   because anything here is meant to be re-themed.
+*/
+
+:root {
+  /* ── Palette — VOID ─────────────────────────────────────────────────────── */
+  --bg:#0e0e0e;            /* ground */
+  --s1:#161616;            /* raised surface: cards, fields */
+  --s2:#1e1e1e;            /* pressed / secondary surface */
+  --s3:#252525;            /* tertiary */
+  --bd:#272727;            /* hairline */
+  --bd-2:#333333;          /* emphasised hairline */
+  --tx:#dedede;            /* foreground */
+  --tx-2:#9a9a9a;          /* secondary foreground — anything that is a label */
+  --mu:#4a4a4a;            /* placeholder only, never a label (see ROOT tokens) */
+
+  /* Accent. Only --y and --on-y are literals; the washes mix from them. */
+  --y:#A78BFA;
+  --yd:color-mix(in srgb, var(--y) 13%, transparent);
+  --yb:color-mix(in srgb, var(--y) 26%, transparent);
+  --y-fade:color-mix(in srgb, var(--y) 6%, transparent);
+  --on-y:#0e0e0e;
+
+  --gr:#5cdb7d; --re:#e06060; --or:#e0a060;
+
+  /* ── Type ─────────────────────────────────────────────────────────────── */
+  --mono:'JetBrains Mono','Courier New',monospace;
+  --head:'Space Grotesk',system-ui,sans-serif;
+
+  /* ── Shape — one anchor, four ratios ──────────────────────────────────── */
+  --r-base:4px;
+  --r1:calc(var(--r-base) * .75);
+  --r2:var(--r-base);
+  --r3:calc(var(--r-base) * 1.75);
+  --r-sheet:calc(var(--r-base) * 2.5);
+  --r-pill:999px;
+  --bw:1px;
+
+  --dens:1;
+
+  /* ── Motion ───────────────────────────────────────────────────────────── */
+  --mo:1;
+  --dur-1:calc(.12s * var(--mo));
+  --dur-2:calc(.22s * var(--mo));
+  --dur-3:calc(.3s  * var(--mo));
+  --ease:cubic-bezier(.4,0,.2,1);
+  --ease-out:cubic-bezier(.34,1.4,.5,1);
+  --press:var(--s2);
+
+  /* ── Title band ───────────────────────────────────────────────────────── */
+  --title-px:54px;
+  --title-cap:.65;         /* caps height as a fraction of the em box */
+  --title-sh-x:1px;        /* the wordmark's accent shadow offset */
+  --title-sh-c:var(--y);
+  --band-row:40px;
+
+  --shadow-chrome:0 10px 34px -12px rgba(0,0,0,.65);
+}
+
+/* The one dial HUB does keep. Everything animated multiplies by --mo, so the
+   OS switch is a single declaration rather than a hunt through the sheet. */
+@media (prefers-reduced-motion: reduce) { :root { --mo:0 } }
