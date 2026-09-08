@@ -57,43 +57,99 @@ const HubEnrich = (() => {
      `force` is the settings button: look at everything again, however recently
      it was checked. Without it, only what is missing or stale is fetched.
 
-     Serial, with a pause between channels. This is someone's own browser
-     talking to a site they are logged into; a hundred parallel requests is not
-     a neighbourly way to ask, and nothing here is urgent. */
+     Two things make this quick rather than patient.
+
+     **Two clocks, not one.** A channel page is a megabyte of markup and holds
+     one thing that ever changes — the avatar, which changes about never. The
+     feed is a few kilobytes and holds the only thing worth polling. So they are
+     asked about on their own schedules: the feed every `checkEvery` hours, the
+     page only when the id or the avatar is missing, or once a fortnight. A
+     refresh over a settled board is now forty small XML files instead of forty
+     megabytes of HTML.
+
+     **Lanes.** It used to be one channel at a time with a third of a second of
+     sleep between them, which on forty channels is most of a minute of doing
+     nothing at all. It is now a small pool — five by default — with no sleep,
+     because five requests to a site you are already logged into is a page load,
+     not a hammering. The pool is the whole speed-up; the two clocks are what
+     stops it having to work.
+
+     Nothing here is allowed to be the reason the board does not render: a
+     channel that will not answer keeps what it had and is asked again next
+     time. */
   async function pass({ force = false, ui } = {}){
-    if (!can() || running) return { done:0 };
+    if (!can() || running) return { done:0, failed:0 };
     running = true;
     let done = 0, failed = 0;
 
     try {
-      const every = Math.max(1, (ui && ui.checkEvery) || 6) * 3600e3;
-      const list = Store.channels().filter(ch =>
-        force || !ch.ytId || !ch.avatar || Date.now() - (ch.checkedAt || 0) > every);
+      const feedEvery = Math.max(1, (ui && ui.checkEvery) || 6) * 3600e3;
+      const pageEvery = Math.max(1, (ui && ui.pageDays) || 14) * 864e5;
+      const wantNew = !ui || ui.checkNew !== false;
+      const now = Date.now();
 
-      for (let i = 0; i < list.length; i++){
-        const ch = list[i];
-        say({ at:i + 1, of:list.length, name:ch.name });
+      /* What each channel actually needs, worked out once. A channel that needs
+         neither is not in the list at all, which is why a second refresh a
+         minute after the first costs nothing. */
+      const jobs = [];
+      Store.channels().forEach(ch => {
+        const needPage = force || !ch.ytId || !ch.avatar
+                       || now - (ch.pageAt || 0) > pageEvery;
+        const needFeed = wantNew && (force || !ch.latest
+                       || now - (ch.checkedAt || 0) > feedEvery);
+        if (needPage || needFeed) jobs.push({ ch, needPage, needFeed });
+      });
 
-        const patch = { checkedAt: Date.now() };
+      const total = jobs.length;
+      if (!total) return { done:0, failed:0 };
+
+      let next = 0, at = 0;
+
+      async function one(job){
+        const { ch } = job;
+        const patch = {};
         let ytId = ch.ytId;
 
-        if (force || !ytId || !ch.avatar){
-          const info = await lookup(ch);
-          if (info){
-            if (info.ytId){ patch.ytId = info.ytId; ytId = info.ytId }
-            if (info.avatar) patch.avatar = info.avatar;
-          } else failed++;
-        }
-
-        if (ytId && (!ui || ui.checkNew !== false)){
-          const top = await newest(ytId);
+        /* When the id is already known the two requests do not depend on each
+           other, so they go out together. When it is not, the feed has to wait:
+           only the channel's own page knows what a handle's UC id is. */
+        if (job.needPage && ytId && job.needFeed){
+          const [info, top] = await Promise.all([lookup(ch), newest(ytId)]);
+          if (info){ if (info.ytId){ patch.ytId = info.ytId }
+                     if (info.avatar) patch.avatar = info.avatar;
+                     patch.pageAt = Date.now() }
+          else failed++;
           if (top) patch.latest = { videoId:top.videoId, title:top.title, at:top.at };
+          patch.checkedAt = Date.now();
+        } else {
+          if (job.needPage){
+            const info = await lookup(ch);
+            if (info){
+              if (info.ytId){ patch.ytId = info.ytId; ytId = info.ytId }
+              if (info.avatar) patch.avatar = info.avatar;
+              patch.pageAt = Date.now();
+            } else failed++;
+          }
+          if (job.needFeed && ytId){
+            const top = await newest(ytId);
+            if (top) patch.latest = { videoId:top.videoId, title:top.title, at:top.at };
+            patch.checkedAt = Date.now();
+          }
         }
 
         Store.enrich(ch.id, patch);
         done++;
-        if (i < list.length - 1) await new Promise(r => setTimeout(r, 350));
+        say({ at:++at, of:total, name:ch.name });
       }
+
+      /* A fixed number of lanes, each pulling the next job off the pile as it
+         finishes its own. No batching: one slow channel holds up its own lane
+         and nothing else. */
+      const lanes = Math.max(1, Math.min(8, (ui && ui.lanes) || 5));
+      say({ at:0, of:total, name:'' });
+      await Promise.all(Array.from({ length:Math.min(lanes, total) }, async () => {
+        while (next < total) await one(jobs[next++]);
+      }));
     } finally {
       running = false;
       say(null);

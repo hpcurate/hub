@@ -503,7 +503,8 @@ console.log('\n avatars and what is new');
   ok('with the url it was given',
      card.querySelector('.av img').getAttribute('src') === 'https://yt3.example/a.jpg');
   ok('a channel posted since you looked reads as new', card.classList.contains('is-new'));
-  ok('and the dot says what it is', card.querySelector('.new').title === 'A new one');
+  ok('and the dot says what it is and what clicking does',
+     card.querySelector('.new').title === 'A new one — click to clear');
 
   w.Store.touch(ch.id);
   set($('#q'), '');
@@ -514,19 +515,23 @@ console.log('\n avatars and what is new');
   const other = w.Store.channels().find(c => c.id !== ch.id);
   ok('a channel with nothing fetched is not new', w.Store.isNew(other) === false);
 }
-click($('#btn-set'));
+click($('#btn-card'));
 await tick();
-click($('#set-body [data-k="showAvatars"]'));
+click($('#card-body [data-k="slot-avatar"] .part-sw'));
 await tick();
 ok('avatars can be turned off', $('#grid').classList.contains('no-avatar'));
-click($('#set-body [data-k="showAvatars"]'));
+click($('#card-body [data-k="slot-avatar"] .part-sw'));
 await tick();
-click($('#set-body [data-k="showNew"]'));
+click($('#card-body [data-k="slot-dot"] .part-sw'));
 await tick();
 ok('so can the new dot', $('#grid').classList.contains('no-new'));
-click($('#set-body [data-k="showNew"]'));
+click($('#card-body [data-k="slot-dot"] .part-sw'));
+await tick();
+click($('#sheet-card [data-close]'));
 await tick();
 
+click($('#btn-set'));
+await tick();
 ok('the accent is a real token', !!$('#set-body [data-k="accent"] input[type="color"]'));
 set($('#s-accent'), '#00ff00');
 await tick();
@@ -534,13 +539,18 @@ ok('changing it moves the whole system', d.documentElement.style.getPropertyValu
 set($('#s-radius'), '10');
 await tick();
 ok('so does the corner radius', d.documentElement.style.getPropertyValue('--r-base') === '10px');
+click($('#sheet-set [data-close]'));
+await tick();
+
+click($('#btn-card'));
+await tick();
 set($('#s-descLines'), '2');
 await tick();
 ok('and the description clamp', d.documentElement.style.getPropertyValue('--desc-lines') === '2');
-click($('#set-body [data-k="avatarShape"] .seg-b[data-v="square"]'));
+click($('#card-body [data-k="avatarShape"] .seg-b[data-v="square"]'));
 await tick();
 ok('the avatar shape is a choice', $('#grid').dataset.avatar === 'square');
-click($('#sheet-set [data-close]'));
+click($('#sheet-card [data-close]'));
 await tick();
 
 console.log('\n enter opens the first result');
@@ -694,19 +704,29 @@ await tick();
   ok('and every one of them switches back off',
      badge('posted') + badge('added') + badge('rank') + badge('handle') === 0);
 }
+click($('#sheet-set [data-close]'));
+await tick();
+
+
+console.log('\nthe card editor');
+click($('#btn-card'));
+await tick();
 {
-  click($('#set-body [data-k="layout"] .seg-b[data-v="list"]'));
+  ok('the card editor is its own pane', !$('#sheet-card').hidden && $('#sheet-set').hidden);
+  ok('and it holds a real card, built by the board',
+     !!$('#card-prev .card') && !!$('#card-prev .card .card-name'));
+  ok('a row for every part there is',
+     $$('#card-body .set-part').length === w.HubModel.PARTS.length,
+     String($$('#card-body .set-part').length));
+  ok('and six zones to put one in',
+     $$('#card-body [data-k="slot-name"] .zc').length === 6);
+
+  click($('#card-body [data-k="layout"] .seg-b[data-v="list"]'));
   await tick();
   ok('the card shape is a setting', $('#grid').dataset.layout === 'list');
-  click($('#set-body [data-k="badgePos"] .seg-b[data-v="top"]'));
+  click($('#card-body [data-k="layout"] .seg-b[data-v="card"]'));
   await tick();
-  ok('so is where the badges sit', $('#grid').dataset.badges === 'top');
-  click($('#set-body [data-k="avatarPos"] .seg-b[data-v="top"]'));
-  await tick();
-  /* dataset.avatarPos writes data-avatar-pos, not data-avatarPos. The
-     stylesheet has to select the attribute that actually exists, so the
-     attribute is what gets asserted here, not the property that set it. */
-  ok('and the avatar', $('#grid').getAttribute('data-avatar-pos') === 'top');
+
   set($('#s-gap'), '20');
   await tick();
   ok('the space between cards is a dial',
@@ -718,38 +738,81 @@ await tick();
   set($('#s-avatarSize'), '44');
   await tick();
   ok('and the avatar size', d.documentElement.style.getPropertyValue('--av-size') === '44px');
-  click($('#set-body [data-k="border"] .seg-b[data-v="none"]'));
+  click($('#card-body [data-k="border"] .seg-b[data-v="none"]'));
   await tick();
   ok('the card edge is a choice', $('#grid').dataset.border === 'none');
-  click($('#set-body [data-k="surface"] .seg-b[data-v="flat"]'));
+  click($('#card-body [data-k="surface"] .seg-b[data-v="flat"]'));
   await tick();
   ok('so is its ground', $('#grid').dataset.surface === 'flat');
+}
+{
+  /* ── Moving a part ──────────────────────────────────────────────────────────
+     The whole point of the editor: a part is somewhere, and somewhere is a zone
+     you can pick. The card in the DOM has to actually change parents. */
+  const nameIn = () => $('#grid .card .card-name').closest('.zone').dataset.z;
+  ok('the name starts in the top left', nameIn() === 'tl');
+  click($('#card-body [data-k="slot-name"] .zc[data-z="br"]'));
+  await tick();
+  ok('and can be moved to the bottom right', nameIn() === 'br', nameIn());
+  ok('the stored slots say so',
+     JSON.parse(w.localStorage.getItem('hub.ui.v1')).slots.name === 'br');
+  ok('the card in the editor moved with it',
+     $('#card-prev .card .card-name').closest('.zone').dataset.z === 'br');
+  click($('#card-body [data-k="slot-name"] .zc[data-z="tl"]'));
+  await tick();
+  ok('and back again', nameIn() === 'tl');
 
-  ok('there are presets', $$('#set-body .presets .btn').length === 4);
-  click($('#set-body .presets [data-preset="classic"]'));
+  const tagIn = () => $('#grid .card .tag').closest('.zone').dataset.z;
+  click($('#card-body [data-k="slot-tag"] .zc[data-z="tr"]'));
+  await tick();
+  ok('a second part moves on its own', tagIn() === 'tr');
+  ok('and the first one stayed where it was', nameIn() === 'tl');
+  click($('#card-body [data-k="slot-tag"] .zc[data-z="bl"]'));
+  await tick();
+
+  /* A part that is off is not on the card at all, which is what lets an empty
+     zone row stand down rather than leaving a gap where it used to be. */
+  click($('#card-body [data-k="slot-desc"] .part-sw'));
+  await tick();
+  ok('a part switched off leaves the card', !$('#grid .card .card-desc'));
+  click($('#card-body [data-k="slot-desc"] .part-sw'));
+  await tick();
+  ok('and comes back', !!$('#grid .card .card-desc'));
+}
+{
+  ok('every zone has a direction', $$('#card-body [data-k="zones"] .zg').length === 6);
+  click($('#card-body [data-k="zones"] .zg[data-z="tl"] .seg-b[data-v="column"]'));
+  await tick();
+  ok('a zone can be told to stack', $('#grid').getAttribute('data-zone-tl') === 'column');
+  ok('and it is remembered',
+     JSON.parse(w.localStorage.getItem('hub.ui.v1')).zones.tl === 'column');
+  click($('#card-body [data-k="zones"] .zg[data-z="tl"] .seg-b[data-v="row"]'));
+  await tick();
+  ok('and back to a row', $('#grid').getAttribute('data-zone-tl') === 'row');
+}
+{
+  ok('there are presets', $$('#card-body .presets .btn').length === 4);
+  click($('#card-body .presets [data-preset="classic"]'));
   await tick();
   ok('one sets several dials at once',
      $('#grid').dataset.layout === 'card' && $('#grid').dataset.border === 'hairline'
-     && $('#grid').dataset.surface === 'raised' && $('#grid').dataset.badges === 'bottom');
+     && $('#grid').dataset.surface === 'raised');
   ok('and it is stored, not just drawn',
      JSON.parse(w.localStorage.getItem('hub.ui.v1')).layout === 'card');
-  click($('#set-body .presets [data-preset="poster"]'));
+  click($('#card-body .presets [data-preset="poster"]'));
   await tick();
   ok('another sets different ones',
-     $('#grid').dataset.avatarPos === 'top' && $('#grid').dataset.border === 'accent');
-  click($('#set-body [data-k="border"] .seg-b[data-v="none"]'));
+     $('#grid').dataset.border === 'accent' && $('#grid').getAttribute('data-zone-tl') === 'column');
+  ok('a preset writes the slots too',
+     JSON.parse(w.localStorage.getItem('hub.ui.v1')).slots.badges === 'bl');
+  click($('#card-body [data-k="border"] .seg-b[data-v="none"]'));
   await tick();
   ok('a dial moved afterwards is still yours', $('#grid').dataset.border === 'none');
-  click($('#set-body .presets [data-preset="classic"]'));
+  click($('#card-body .presets [data-preset="classic"]'));
   await tick();
 }
-click($('#sheet-set [data-close]'));
-await tick();
 
-
-console.log('\nthe dot, the avatar and the type sizes');
-click($('#btn-set'));
-await tick();
+console.log('\nthe dot, the avatar and the fresh card');
 {
   const ch = w.Store.channels()[0];
   w.Store.enrich(ch.id, { avatar:'https://yt3.example/a.jpg',
@@ -757,9 +820,12 @@ await tick();
   set($('#q'), '');
   await tick();
 
-  click($('#set-body [data-k="newDotPos"] .seg-b[data-v="avatar"]'));
+  click($('#card-body [data-k="dotOnAvatar"]'));
   await tick();
-  ok('the dot can be moved', $('#grid').dataset.dot === 'avatar');
+  ok('the dot can be pinned to the avatar', $('#grid').dataset.dot === 'avatar');
+  click($('#card-body [data-k="dotOnAvatar"]'));
+  await tick();
+  ok('and unpinned back into its zone', $('#grid').dataset.dot === 'slot');
   set($('#s-newDotSize'), '11');
   await tick();
   ok('and sized', d.documentElement.style.getPropertyValue('--dot-size') === '11px');
@@ -769,25 +835,85 @@ await tick();
   await tick();
   ok('and can be given its own colour',
      d.documentElement.style.getPropertyValue('--dot-c') === '#ff8800');
-  click($('#set-body [data-k="newDotColor"] .btn'));
+  click($('#card-body [data-k="newDotColor"] .btn'));
   await tick();
   ok('and handed back to the accent',
      d.documentElement.style.getPropertyValue('--dot-c') === 'var(--y)');
 
-  click($('#set-body [data-k="avatarShape"] .seg-b[data-v="rounded"]'));
+  click($('#card-body [data-k="avatarShape"] .seg-b[data-v="rounded"]'));
   await tick();
   ok('there is a third avatar shape', $('#grid').dataset.avatar === 'rounded');
-  click($('#set-body [data-k="avatarBorder"] .seg-b[data-v="accent"]'));
+  click($('#card-body [data-k="avatarBorder"] .seg-b[data-v="accent"]'));
   await tick();
   ok('the avatar can take an edge',
      $('#grid').getAttribute('data-avatar-border') === 'accent');
-  click($('#set-body [data-k="nameAlign"] .seg-b[data-v="top"]'));
+}
+{
+  /* ── Posted in the last day ────────────────────────────────────────────────
+     A different fact from "new to you", and a different mark: the whole card,
+     not a dot on it. It does not care whether the dot has been cleared. */
+  const ch = w.Store.channels()[0];
+  const cardOf = id => $$('#grid .card').find(el => el.dataset.id === id);
+  w.Store.enrich(ch.id, { latest:{ videoId:'vF', title:'an hour ago', at:Date.now() - 3600e3 } });
+  set($('#q'), '');
   await tick();
-  ok('the name can sit at the top of the picture instead of level with it',
-     $('#grid').getAttribute('data-name-align') === 'top');
-  click($('#set-body [data-k="nameAlign"] .seg-b[data-v="center"]'));
-  await tick();
+  ok('a channel that posted an hour ago lights its card',
+     cardOf(ch.id).classList.contains('is-fresh'));
 
+  w.Store.clearNew(ch.id);
+  set($('#q'), '');
+  await tick();
+  ok('and clearing the dot does not put it out',
+     cardOf(ch.id).classList.contains('is-fresh')
+     && !cardOf(ch.id).classList.contains('is-new'));
+
+  w.Store.enrich(ch.id, { latest:{ videoId:'vO', title:'last week', at:Date.now() - 8 * 86400000 } });
+  set($('#q'), '');
+  await tick();
+  ok('last week does not', !cardOf(ch.id).classList.contains('is-fresh'));
+
+  w.Store.enrich(ch.id, { latest:{ videoId:'vF2', title:'an hour ago', at:Date.now() - 3600e3 } });
+  set($('#q'), '');
+  await tick();
+  set($('#s-freshHours'), '1');
+  await tick();
+  ok('how fresh is fresh is a dial', !cardOf(ch.id).classList.contains('is-fresh'));
+  set($('#s-freshHours'), '24');
+  await tick();
+  click($('#card-body [data-k="showFresh"]'));
+  await tick();
+  ok('and it can be switched off altogether', $('#grid').classList.contains('no-fresh'));
+  click($('#card-body [data-k="showFresh"]'));
+  await tick();
+}
+{
+  const aardvark = () => $$('#grid .card')
+    .find(c => c.querySelector('.card-name').textContent === 'aardvark');
+  ok('the count is a badge to begin with', !!$('#grid .card .b-count'));
+  ok('and there is no number', !$('#grid .card .card-n'));
+
+  click($('#card-body [data-k="countStyle"] .seg-b[data-v="number"]'));
+  await tick();
+  ok('the number mode says so on the grid', $('#grid').dataset.count === 'number');
+  ok('the badge stands down', !$('#grid .card .b-count'));
+  const n = aardvark().querySelector('.card-n');
+  ok('the number is shown', !!n);
+  ok('and it is only a number', /^[0-9]+$/.test(n.textContent), n.textContent);
+  ok('and it is that channel’s own count',
+     n.textContent === String(w.Store.channels().find(c => c.name === 'aardvark').clicks),
+     n.textContent);
+
+  click($('#card-body [data-k="countStyle"] .seg-b[data-v="badge"]'));
+  await tick();
+  ok('and back to a badge', !!$('#grid .card .b-count') && !$('#grid .card .card-n'));
+}
+click($('#sheet-card [data-close]'));
+await tick();
+
+console.log('\nthe type sizes');
+click($('#btn-set'));
+await tick();
+{
   set($('#s-nameSize'), '21');
   await tick();
   ok('the name has a size', d.documentElement.style.getPropertyValue('--name-px') === '21px');
@@ -800,29 +926,139 @@ await tick();
   set($('#s-titleSize'), '40');
   await tick();
   ok('and the wordmark', d.documentElement.style.getPropertyValue('--title-px') === '40px');
+  ok('and settings opens the card editor', !!$('#set-body [data-k="cardeditor"] .btn'));
 }
+
+console.log('\nthe heat has steps now');
 {
-  ok('the count is a badge to begin with', !!$('#grid .card .b-count'));
-  ok('and there is no number', $('#grid .card .card-n').hidden);
-
-  click($('#set-body [data-k="countStyle"] .seg-b[data-v="number"]'));
+  /* Ten colours, not two hundred. Two channels a click apart on a big board
+     land on the same step; a scale you cannot read is not a scale. */
+  const heatOf = name => $$('#grid .card')
+    .find(c => c.querySelector('.card-name').textContent === name)
+    .style.getPropertyValue('--heat-t');
+  set($('#s-heatSteps'), '2');
   await tick();
-  ok('the number mode says so on the grid', $('#grid').dataset.count === 'number');
-  ok('the badge stands down', !$('#grid .card .b-count'));
-  const n = $$('#grid .card').find(c => c.querySelector('.card-name').textContent === 'aardvark')
-              .querySelector('.card-n');
-  ok('the number is shown', !n.hidden);
-  ok('and it is only a number', /^[0-9]+$/.test(n.textContent), n.textContent);
-  ok('and it is that channel’s own count',
-     n.textContent === String(w.Store.channels().find(c => c.name === 'aardvark').clicks),
-     n.textContent);
-
-  click($('#set-body [data-k="countStyle"] .seg-b[data-v="badge"]'));
+  const two = $$('#grid .card').map(c => c.style.getPropertyValue('--heat-t'));
+  ok('two steps means two values', new Set(two).size <= 2, [...new Set(two)].join(' '));
+  ok('and they are the ends of the ramp',
+     two.every(v => v === '0.000' || v === '1.000'), [...new Set(two)].join(' '));
+  set($('#s-heatSteps'), '10');
   await tick();
-  ok('and back to a badge', !!$('#grid .card .b-count') && $('#grid .card .card-n').hidden);
+  const ten = $$('#grid .card').map(c => c.style.getPropertyValue('--heat-t'));
+  ok('ten steps is ten values at most', new Set(ten).size <= 10);
+  ok('and every one of them is on a tenth',
+     ten.every(v => Math.abs(Number(v) * 9 - Math.round(Number(v) * 9)) < 0.01),
+     [...new Set(ten)].join(' '));
+  ok('the hottest card is still the hottest', heatOf('aardvark') === '1.000', heatOf('aardvark'));
+  ok('and it is remembered', JSON.parse(w.localStorage.getItem('hub.ui.v1')).heatSteps === 10);
 }
 click($('#sheet-set [data-close]'));
 await tick();
+
+console.log('\nclearing the dots');
+{
+  /* A board seeded in one pass arrives with a dot on every card. The button is
+     only there while there is something to clear, and it clears without
+     claiming any of them was opened. */
+  const chans = w.Store.channels();
+  chans.forEach(c => w.Store.enrich(c.id, {
+    latest:{ videoId:'seed' + c.id, title:'seeded', at:Date.now() } }));
+  set($('#q'), '');
+  await tick();
+  const seenBefore = w.Store.channels().map(c => c.seen);
+  ok('every card has a dot', $$('#grid .card.is-new').length === chans.length,
+     $$('#grid .card.is-new').length + ' of ' + chans.length);
+  ok('the button says how many', !$('#btn-dots').hidden
+     && $('#dots-n').textContent === String(chans.length));
+
+  click($('#btn-dots'));
+  await tick();
+  ok('one click only arms it', $('#btn-dots').classList.contains('armed')
+     && $$('#grid .card.is-new').length === chans.length);
+  click($('#btn-dots'));
+  await tick();
+  ok('the second clears the lot', $$('#grid .card.is-new').length === 0);
+  ok('and the button goes away', $('#btn-dots').hidden);
+  ok('nothing claims to have been opened',
+     w.Store.channels().every((c, i) => c.seen === seenBefore[i]));
+  ok('it is written down, not only drawn',
+     JSON.parse(w.localStorage.getItem('hub.channels.v1')).every(c => c.dotAt > 0));
+
+  /* One card at a time, by clicking the dot itself. */
+  const one = w.Store.channels()[0];
+  w.Store.enrich(one.id, { latest:{ videoId:'again', title:'again', at:Date.now() } });
+  set($('#q'), '');
+  await tick();
+  const card = $$('#grid .card').find(el => el.dataset.id === one.id);
+  ok('a new upload brings its dot back', card.classList.contains('is-new'));
+  click(card.querySelector('.new'));
+  await tick();
+  ok('and clicking that dot clears just that one',
+     !$$('#grid .card').find(el => el.dataset.id === one.id).classList.contains('is-new'));
+  ok('without opening the channel',
+     w.Store.channels().find(c => c.id === one.id).seen === one.seen);
+}
+
+console.log('\nfavourite categories');
+{
+  click($('#btn-cats'));
+  await tick();
+  const cats = w.Store.cats();
+  const last = cats[cats.length - 1];
+  ok('every category row has a star', $$('#cat-list .cat-fav').length === cats.length);
+  ok('and none of them is on to begin with', $$('#cat-list .cat-fav.on').length === 0);
+
+  click($('#cat-list [data-fav="' + last.id + '"]'));
+  await tick();
+  ok('starring one says so', w.Store.cats().find(c => c.id === last.id).fav === true);
+  ok('and it is written down',
+     JSON.parse(w.localStorage.getItem('hub.cats.v1')).find(c => c.id === last.id).fav === true);
+  click($('#sheet-cat [data-close]'));
+  await tick();
+
+  const chipNames = () => $$('#chips .chip').slice(1).map(c =>
+    (c.querySelector('.t') || c).textContent);
+  ok('a favourite is first on the filter bar', chipNames()[0] === last.name, chipNames().join(','));
+  ok('and it is marked as one',
+     $$('#chips .chip')[1].classList.contains('fav'));
+  ok('the manager keeps its own order',
+     w.Store.cats()[w.Store.cats().length - 1].id === last.id);
+
+  click($('#btn-set'));
+  await tick();
+  click($('#set-body [data-k="favFirst"]'));
+  await tick();
+  click($('#sheet-set [data-close]'));
+  await tick();
+  ok('pinning can be switched off', chipNames()[0] !== last.name);
+  click($('#btn-set'));
+  await tick();
+  click($('#set-body [data-k="favFirst"]'));
+  await tick();
+  click($('#sheet-set [data-close]'));
+  await tick();
+}
+
+console.log('\nthe filter plays the board’s own entry');
+{
+  /* Turning a category on leaves a board that mostly has nothing to do with the
+     one before it, so the cards arrive rather than slide. Every card that ends
+     up on screen carries the entry class and its own place in the stagger. */
+  const cat = w.Store.cats().find(c => w.Store.countIn(c.id) > 0);
+  const chip = $$('#chips .chip').find(b => (b.querySelector('.t') || {}).textContent === cat.name);
+  click(chip);
+  await tick();
+  const cards = $$('#grid .card');
+  ok('there is something to look at', cards.length > 0);
+  ok('every card on the filtered board is arriving, not sliding',
+     cards.every(c => c.classList.contains('in')));
+  ok('and each has its own place in the stagger',
+     cards.every((c, i) => c.style.getPropertyValue('--i') === String(i)));
+  click($('#chips .chip.all'));
+  await tick();
+  ok('clearing the filter plays it too',
+     $$('#grid .card').every(c => c.classList.contains('in')));
+}
 
 console.log('\nhidden really means hidden');
 {

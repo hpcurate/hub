@@ -25,11 +25,50 @@ const HubModel = (() => {
     { name:'watch',    color:'#5CDB7D' },
   ];
 
+  /* ── The card's zones ──────────────────────────────────────────────────────
+     Six of them, two to a row. Every part of a card names the one it sits in,
+     and that is the whole of the card editor's model: a part is somewhere, and
+     somewhere is one of these.
+
+     A zone is a flex box, so what is in it sits side by side; `dir` turns one
+     into a stack, and `top` is the same row with everything hung from the top
+     rather than centred on it. */
+  const ZONES = ['tl', 'tr', 'ml', 'mr', 'bl', 'br'];
+  const ZONE_NAMES = { tl:'top left', tr:'top right', ml:'middle left',
+                       mr:'middle right', bl:'bottom left', br:'bottom right' };
+
+  /* The parts that can be moved. `fixed` ones are drawn against the card rather
+     than inside a zone — the heat line is an edge, not an item — so they are
+     not in here at all. Order is the order they sit in inside a zone, so two
+     parts sharing one never argue about which comes first. */
+  const PARTS = [
+    { k:'avatar', label:'avatar',        show:'showAvatars' },
+    { k:'dot',    label:'the new dot',   show:'showNew' },
+    { k:'name',   label:'channel name' },
+    { k:'desc',   label:'description',   show:'showDesc' },
+    { k:'tag',    label:'category tag',  show:'showTag' },
+    { k:'badges', label:'badges',        show:null },
+    { k:'count',  label:'opens, as a number' },
+    { k:'edit',   label:'the edit button' },
+  ];
+  const PART_KEYS = PARTS.map(p => p.k);
+
+  const DEFAULT_SLOTS = { avatar:'tl', dot:'tr', name:'tl', desc:'ml',
+                          tag:'bl', badges:'br', count:'br', edit:'tr' };
+  /* The middle row is the tall one — it takes whatever height the card has
+     spare — so its zones hang from the top by default; everywhere else things
+     sit on a common centre line. */
+  const DEFAULT_ZONES = { tl:'row', tr:'row', ml:'top', mr:'top', bl:'row', br:'row' };
+
   /* Everything on the board that is a preference rather than data. The two
      heat colours are the gradient the request asked to be able to choose. */
   const DEFAULT_UI = {
     sort:'seen', size:'m',
     heatFrom:'#3a3a3a', heatTo:'#A78BFA',
+    /* How many colours the heat gradient is allowed to be. A continuous ramp
+       across forty cards is forty colours nobody can tell apart; ten is a scale
+       you can actually read one card against another with. */
+    heatSteps:10,
     showHeat:true, showCounts:false, hideEmpty:false,
     addMode:false,
 
@@ -37,13 +76,14 @@ const HubModel = (() => {
        dial here moves the system rather than one rule. */
     accent:'#A78BFA', radius:4, motion:1,
 
-    /* Layout. `layout` is the shape of a card, the rest are where things sit
-       inside it. Presets in settings set several of these at once; every one of
-       them is still a dial on its own afterwards. */
+    /* Layout. `layout` is the shape of a card; `slots` and `zones` are where
+       everything inside it sits, and both are the card editor's to write.
+       Presets set several of these at once; every one of them is still a dial
+       on its own afterwards. */
     layout:'card',            /* card | compact | list */
-    avatarPos:'left',         /* left | top */
+    slots: { ...DEFAULT_SLOTS },
+    zones: { ...DEFAULT_ZONES },
     avatarSize:30,
-    badgePos:'bottom',        /* bottom | top */
     nameLines:2,
     gap:12,
     border:'hairline',        /* hairline | none | accent */
@@ -58,16 +98,22 @@ const HubModel = (() => {
     showAvatars:true, showDesc:true, descLines:4,
     showTag:true, showSeen:true, showNew:true,
 
-    /* The avatar, and how the name sits beside it. */
+    /* The avatar. */
     avatarShape:'circle',     /* circle | rounded | square */
     avatarBorder:'hairline',  /* none | hairline | accent */
-    nameAlign:'center',       /* center | top */
 
-    /* The new-video dot: where it sits, how big, and what colour. Empty colour
-       means the accent, so it follows the rest of the board by default. */
-    newDotPos:'corner',       /* corner | name | avatar */
+    /* The new-video dot. Where it sits is a slot like everything else; pinning
+       it puts it on the corner of the avatar instead, which is the one place
+       that is not a zone. Empty colour means the accent, so it follows the
+       rest of the board by default. */
+    dotOnAvatar:false,
     newDotSize:7,
     newDotColor:'',
+
+    /* Something posted in the last `freshHours` gets a card of its own — a lit
+       edge and a glow, so "there is something to watch right now" is a thing
+       you see across the board rather than a dot you go looking for. */
+    showFresh:true, freshHours:24,
 
     /* Opens as a badge among the others, or as a plain number in the corner at
        the name's own size. */
@@ -85,6 +131,13 @@ const HubModel = (() => {
     /* The extension. checkEvery is in hours; a feed that is polled harder than
        this tells you nothing more, because uploads are not that frequent. */
     queueButton:true, checkNew:true, checkEvery:6,
+    /* How many channels are asked about at once, and how many days an avatar is
+       trusted for. The first is the whole of "make the refresh faster"; the
+       second is why a refresh no longer re-reads forty channel pages to learn
+       nothing. */
+    lanes:5, pageDays:14,
+    /* Favourite categories first in every list you pick one from. */
+    favFirst:true,
     /* 0 is "as wide as the window". Anything else is a pixel measure, which is
        what an ultrawide needs: the board reflows to any width, but a board four
        thousand pixels across is a wall, not a page. */
@@ -168,10 +221,31 @@ const HubModel = (() => {
     clicks:0, seen:null, desc:'', cat:'',
     /* Filled in later by the extension, from the channel's own page and feed.
        Empty is not an error, it is "not looked up yet". */
-    ytId:'', avatar:'', latest:null, checkedAt:0,
+    ytId:'', avatar:'', latest:null, checkedAt:0, pageAt:0,
+    /* When the new-video dot was last cleared. Separate from `seen` because
+       clearing a dot is not the same as saying you watched the channel — a
+       board seeded with forty channels wants all forty dots gone without every
+       one of them claiming to have been opened just now. */
+    dotAt:0,
     ...c,
   });
-  const fillCat = (c, i) => ({ order:i, icon:'', ...c });
+  const fillCat = (c, i) => ({ order:i, icon:'', fav:false, ...c });
+
+  /* The stored ui, filled out. A plain spread would be enough if every setting
+     were flat, but `slots` and `zones` are objects: a board stored before a part
+     existed has a slots object without it, and a shallow merge would hand back
+     that object with the new part missing rather than defaulted. */
+  const fillUi = raw => {
+    const u = { ...DEFAULT_UI, ...(raw && typeof raw === 'object' ? raw : {}) };
+    u.slots = { ...DEFAULT_SLOTS, ...(u.slots && typeof u.slots === 'object' ? u.slots : {}) };
+    u.zones = { ...DEFAULT_ZONES, ...(u.zones && typeof u.zones === 'object' ? u.zones : {}) };
+    /* Anything that is not a zone is a part with nowhere to be, which draws
+       nothing at all. A stored name of a slot that no longer exists goes back
+       to where it started rather than off the card. */
+    PART_KEYS.forEach(k => { if (!ZONES.includes(u.slots[k])) u.slots[k] = DEFAULT_SLOTS[k] });
+    ZONES.forEach(z => { if (!['row','top','column'].includes(u.zones[z])) u.zones[z] = 'row' });
+    return u;
+  };
 
   const seedCats = () => DEFAULT_CATS.map((c, i) => ({ id:uid(), order:i, ...c }));
 
@@ -209,13 +283,14 @@ const HubModel = (() => {
     return {
       channels: d.channels.map(fillChannel),
       cats: d.cats.map(fillCat).sort((a, b) => a.order - b.order),
-      ui: { ...DEFAULT_UI, ...(d.ui && typeof d.ui === 'object' ? d.ui : {}) },
+      ui: fillUi(d.ui),
       queue: Array.isArray(d.queue) ? d.queue : [],
     };
   }
 
   return { KEYS, PALETTE, DEFAULT_CATS, DEFAULT_UI, ICONS, ICON_KEYS, uid,
-           normUrl, nameFromUrl, makeChannel, makeQueued, fillChannel, fillCat, seedCats,
+           ZONES, ZONE_NAMES, PARTS, PART_KEYS, DEFAULT_SLOTS, DEFAULT_ZONES,
+           normUrl, nameFromUrl, makeChannel, makeQueued, fillChannel, fillCat, fillUi, seedCats,
            EXPORT_KIND, buildExport, readExport };
 })();
 

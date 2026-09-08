@@ -13,13 +13,23 @@ motion tokens, Grotesk for titles and JetBrains Mono for everything else.
   and any colour you like, not just the ten presets. Each can carry one of
   twenty icons, or none, which then shows on every card and filter chip.
   Deleting one never deletes its channels; they fall back to uncategorised.
-  Empty ones can be kept out of the filter bar.
+  Empty ones can be kept out of the filter bar. **Star one** and it goes to the
+  front of every list you pick a category from — the chips, the quick menu, the
+  filing bar — while the order in the manager, which is yours to set, stays put.
 - **Quick categorise** — click the category tag on any card and pick from a
   menu. Or hit **categorise**, choose one category, and click through the cards;
   the board stops being a set of links until you leave the mode.
 - **Avatars and what is new** — in the extension, the board reads each channel's
   own page for its picture and its feed for its newest upload, and marks a card
-  when that channel has posted since you last opened it.
+  when that channel has posted since you last opened it. A channel that posted in
+  the **last 24 hours** gets more than a mark: a lit edge, a glow and a slow
+  sheen down its colour spine, so what is worth opening now reads from the other
+  side of the board. Both the window and the whole effect are settings.
+- **Clearing the dots** — a board seeded in one pass arrives with a dot on every
+  card, which is forty marks saying the same nothing. **clear dots** on the bar
+  answers all of them at once, and clicking a single dot answers that one. It
+  stamps an acknowledgement, not a view: the cards still say never opened,
+  because they have not been.
 - **A queue** — Watch Later lives behind the feed, which the guard removes. The
   **+ queue** button on any video page puts one aside here instead. Opening it
   unlocks that video, not its whole channel.
@@ -29,8 +39,10 @@ motion tokens, Grotesk for titles and JetBrains Mono for everything else.
   most clicked.
 - **Click heat** — a rule under each card, coloured by where that channel sits
   between the least and the most opened on the board. The two ends of the
-  gradient are yours to pick in settings, along with whether the line and the
-  click counts show at all.
+  gradient are yours to pick in settings, and so is **how many steps** there are
+  between them — ten by default, because a continuous ramp across forty cards is
+  forty colours nobody can tell apart. Whether the line and the click counts show
+  at all is a switch too.
 - **Filter** — any number of category chips at once, plus a live search over
   names, descriptions and category names.
 - **Time since last viewed** — clicking a card opens the channel and stamps the
@@ -46,12 +58,21 @@ motion tokens, Grotesk for titles and JetBrains Mono for everything else.
   viewed, click count, when the channel last posted, when you added it, its rank
   on the board by clicks, how many of its videos you have queued, its handle,
   the category tag, and a dot when there is something new.
-- **Layout** — four presets (classic, compact, list, poster) and every dial
-  underneath them: card shape, where the avatar and the badges sit, avatar size,
-  lines for the name, space between cards, card edge and card ground.
-- **Settings for most of it** — every text size on the board, accent, corner
-  radius, motion, content width, the avatar's shape and edge, where the new dot
-  sits and what colour it is, and a switch for every part of a card.
+- **The card editor** — **card** on the bar opens it. A card is **six zones**,
+  two to a row, and every part of one — avatar, name, description, category tag,
+  badges, the count, the new dot, the edit button — names the zone it sits in.
+  Move any of them anywhere; switch any of them off. Each zone has its own
+  direction, so the same six slots give you the avatar beside the name or above
+  it. At the top of the pane is a real card, built and painted by the board's own
+  renderer from the settings as they stand, so nothing there is an approximation.
+  The four presets (classic, compact, list, poster) live here now and write slots
+  and zones like everything else, and the dials underneath them are the card's:
+  shape, avatar size and edge, name lines, description lines, the dot, and the
+  fresh-upload look.
+- **Settings for the rest** — every text size on the board, accent, corner
+  radius, motion, content width, the heat and its steps, every badge, and — in
+  the extension — how often a feed is checked, how long an avatar is trusted, and
+  how many channels are asked about at once.
 
 Keys: `/` search · `Enter` opens the first result · `n` new channel · `Esc` close.
 
@@ -91,6 +112,14 @@ video whose owner cannot be read, the extension being reloaded under a live page
 — ends by uncovering the page, never by sending it away. Being stuck somewhere
 you cannot leave is a worse failure than a video that slipped through, so every
 uncertainty resolves the same way.
+
+**Refreshing:** the board asks YouTube two questions and they are not the same
+question. A channel's **feed** is a few kilobytes and holds the only thing worth
+polling, so it is checked every few hours; a channel's **page** is a megabyte and
+holds one thing that changes about never — the avatar — so it is read only when
+it is missing or a fortnight old. Both go out over a small pool of parallel
+requests rather than one at a time with a pause in between. All three are dials
+in settings.
 
 **Permissions:** `storage`, and YouTube — the latter now as a host permission
 too, so the board can read a channel's own page for its avatar and its feed

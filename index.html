@@ -77,6 +77,11 @@
 
     <button class="btn" id="btn-catmode" title="Categorise by clicking cards">categorise</button>
     <button class="btn" id="btn-cats" title="Manage categories">categories</button>
+    <button class="btn" id="btn-card" title="Lay out the card">card</button>
+    <!-- Only there when there is something to clear. A board seeded in one pass
+         arrives with a dot on every card; this is the one gesture that answers
+         all of them. -->
+    <button class="btn btn-dots" id="btn-dots" title="Clear every new-video dot" hidden>clear dots<span class="btn-n" id="dots-n"></span></button>
     <button class="btn" id="btn-q" title="Queue" hidden>queue<span class="btn-n" id="q-n"></span></button>
     <button class="btn" id="btn-set" title="Settings">settings</button>
   </div>
@@ -194,6 +199,26 @@
       </div>
     </div>
 
+    <div class="sh-acts">
+      <span class="grow"></span>
+      <button type="button" class="btn" data-close>done</button>
+    </div>
+  </div>
+</section>
+
+<!-- ── the card editor ──────────────────────────────────────────────────────
+     A card at the top, built and painted by the board's own renderer, and every
+     dial that decides what one looks like underneath. The controls are built
+     from a list in app.js, like settings — including the two that only exist
+     here: a part and the zone it sits in, and a zone and which way it runs. -->
+<section class="sheet wide" id="sheet-card" hidden aria-modal="true" role="dialog" aria-label="Card editor">
+  <div class="sheet-in">
+    <h2 class="sh-t">card</h2>
+    <p class="sh-s">every part of a card sits in one of six zones. this is a real card, drawn by the board.</p>
+    <div class="card-stage">
+      <div class="grid" id="card-prev" data-size="m" aria-hidden="true"></div>
+    </div>
+    <div class="set-body" id="card-body"></div>
     <div class="sh-acts">
       <span class="grow"></span>
       <button type="button" class="btn" data-close>done</button>

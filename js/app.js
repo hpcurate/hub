@@ -12,7 +12,8 @@ const grid   = $('#grid');
 const chips  = $('#chips');
 const empty  = $('#empty');
 const scrim  = $('#scrim');
-const SHEETS = { ch:$('#sheet-ch'), cat:$('#sheet-cat'), set:$('#sheet-set'), q:$('#sheet-q') };
+const SHEETS = { ch:$('#sheet-ch'), cat:$('#sheet-cat'), set:$('#sheet-set'),
+                q:$('#sheet-q'), card:$('#sheet-card') };
 
 /* Board state. Not persisted beyond the two dials the eye notices across a
    reload — the size of the cards and how they are sorted. A search term and a
@@ -104,19 +105,57 @@ function list(){
    and it also keeps hover and focus alive through a re-sort. */
 const nodes = new Map();
 
+/* ── The parts, and where they sit ───────────────────────────────────────────
+   A card is six zones — two to a row, three rows — and every part of it names
+   the one it is in. That is the whole model behind the card editor: nothing on
+   a card has a place of its own any more, it has a slot, and a slot is
+   somewhere you can move it to.
+
+   The parts are built once with the card and kept on it. Placing is appending
+   them into their zone in a fixed order, which only happens when the layout or
+   the set of live parts actually changed — a card whose slots have not moved is
+   not touched, so nothing loses focus or restarts an animation on a re-render. */
+const ZONES = HubModel.ZONES;
+
 function build(ch){
   const el = document.createElement('article');
   el.className = 'card';
   el.dataset.id = ch.id;
   el.innerHTML =
     '<a class="card-hit" target="_blank" rel="noopener noreferrer"></a>' +
-    '<div class="card-top"><span class="av"><img alt="" loading="lazy"></span>' +
-      '<h3 class="card-name"></h3><span class="new" title="new since you last looked"></span>' +
-      '<button class="card-edit" title="Edit">\u22ef</button></div>' +
-    '<p class="card-desc"></p>' +
-    '<div class="card-foot"><button class="tag" type="button" title="Categorise"></button>' +
-      '<span class="badges"></span></div>' +
-    '<span class="card-n"></span><span class="heat"></span>';
+    ZONES.filter((_, i) => i % 2 === 0).map((z, i) =>
+      '<div class="zrow" data-r="' + 'tmb'[i] + '">' +
+        '<div class="zone" data-z="' + ZONES[i * 2] + '"></div>' +
+        '<div class="zone" data-z="' + ZONES[i * 2 + 1] + '"></div>' +
+      '</div>').join('') +
+    '<span class="heat"></span>';
+
+  /* Every movable part, made once. They live on the node rather than being
+     looked up by selector, because half of them are not in the card at any
+     given moment — a part that is switched off is detached, not hidden, so an
+     empty zone is genuinely empty and its row can stand down. */
+  const mk = (tag, cls, html) => {
+    const n = document.createElement(tag);
+    n.className = cls;
+    if (html) n.innerHTML = html;
+    return n;
+  };
+  const parts = {
+    avatar: mk('span', 'av', '<img alt="" loading="lazy">'),
+    dot:    mk('button', 'new'),
+    name:   mk('h3', 'card-name'),
+    desc:   mk('p', 'card-desc'),
+    tag:    mk('button', 'tag'),
+    badges: mk('span', 'badges'),
+    count:  mk('span', 'card-n'),
+    edit:   mk('button', 'card-edit'),
+  };
+  parts.dot.type = parts.tag.type = parts.edit.type = 'button';
+  parts.dot.title = 'new since you last looked — click to clear';
+  parts.tag.title = 'Categorise';
+  parts.edit.title = 'Edit';
+  parts.edit.textContent = '⋯';
+  el._parts = parts;
 
   /* The stamp is written on the way out, on the same click that opens the tab,
      so "last viewed" means "last time I actually went there".
@@ -140,19 +179,58 @@ function build(ch){
       HubBridge.open(ch, { newTab: ui.newTab });
     }
   });
-  el.querySelector('.card-edit').addEventListener('click', e => {
+  parts.edit.addEventListener('click', e => {
     e.preventDefault(); e.stopPropagation();
     openChannel(ch.id);
+  });
+
+  /* The dot is the control for the thing it means. One card's dot is cleared
+     by clicking it; the whole board's by the button on the bar. */
+  parts.dot.addEventListener('click', e => {
+    e.preventDefault(); e.stopPropagation();
+    Store.clearNew(ch.id);
+    render();
   });
 
   /* Quick categorise: the tag is the control for the thing it names. Filing a
      channel should not need the edit pane — especially since anything added by
      the "+ add" button on YouTube arrives with no category at all. */
-  el.querySelector('.tag').addEventListener('click', e => {
+  parts.tag.addEventListener('click', e => {
     e.preventDefault(); e.stopPropagation();
     openQuick(ch.id, e.currentTarget);
   });
   return el;
+}
+
+/* Which parts this card is showing, in the order they sit inside a zone. A part
+   that is off is not here, and so is not in the card at all. */
+function liveParts(el, ch){
+  const has = {
+    avatar: ui.showAvatars && !!ch.avatar,
+    dot:    ui.showNew && Store.isNew(ch),
+    name:   true,
+    desc:   ui.showDesc,
+    tag:    ui.showTag,
+    badges: el._parts.badges.childElementCount > 0,
+    count:  ui.showCounts && ui.countStyle === 'number',
+    edit:   true,
+  };
+  return HubModel.PART_KEYS.filter(k => has[k]);
+}
+
+function place(el, ch){
+  const live = liveParts(el, ch);
+  const sig = live.map(k => k + ':' + ui.slots[k]).join('|');
+  if (el.dataset.sig === sig) return;
+  el.dataset.sig = sig;
+
+  const zone = z => el.querySelector('.zone[data-z="' + z + '"]');
+  ZONES.forEach(z => { zone(z).textContent = '' });
+  HubModel.PART_KEYS.forEach(k => {
+    const node = el._parts[k];
+    if (!live.includes(k)){ node.remove(); return }
+    zone(ui.slots[k]).appendChild(node);
+  });
 }
 
 /* ── Badges ──────────────────────────────────────────────────────────────────
@@ -211,16 +289,14 @@ function badgeContext(){
 let badgeCtx = { rank:new Map(), queued:new Map() };
 
 function paintBadges(el, ch){
-  /* Opens can be a badge among the others, or a plain number in the corner at
-     the name's own size. The second is a different thing to read, not a
-     restyled version of the first, so it is drawn somewhere else entirely and
-     the badge stands down while it is on. */
-  const num = el.querySelector('.card-n');
+  /* Opens can be a badge among the others, or a plain number of its own at the
+     name's size. The second is a different thing to read, not a restyled
+     version of the first, so it is its own part with its own slot and the badge
+     stands down while it is on. */
   const asNumber = ui.showCounts && ui.countStyle === 'number';
-  num.textContent = asNumber ? String(ch.clicks || 0) : '';
-  num.hidden = !asNumber;
+  el._parts.count.textContent = asNumber ? String(ch.clicks || 0) : '';
 
-  const box = el.querySelector('.badges');
+  const box = el._parts.badges;
   box.textContent = '';
   BADGES.forEach(b => {
     if (!ui[b.k]) return;
@@ -237,6 +313,9 @@ function paintBadges(el, ch){
     box.appendChild(s);
   });
   el.classList.toggle('no-badges', !box.childElementCount);
+  /* Whether there are any badges is part of what the card is showing, so where
+     everything sits is settled here rather than a step later. */
+  place(el, ch);
 }
 
 /* ── The heat line ───────────────────────────────────────────────────────────
@@ -250,7 +329,13 @@ function paintBadges(el, ch){
    claiming to be the hottest. */
 function paintHeat(el, ch){
   const max = Store.maxClicks();
-  const t = max > 0 ? Math.min(1, (ch.clicks || 0) / max) : 0;
+  const raw = max > 0 ? Math.min(1, (ch.clicks || 0) / max) : 0;
+  /* Quantised. A continuous ramp over forty cards is forty colours nobody can
+     tell apart, and a scale you cannot read is not a scale — it is a texture.
+     Ten steps by default: few enough that two cards a step apart are visibly a
+     step apart, many enough that the board still has a gradient across it. */
+  const steps = Math.max(2, Math.round(ui.heatSteps || 10));
+  const t = Math.round(raw * (steps - 1)) / (steps - 1);
   el.style.setProperty('--heat', mix(ui.heatFrom, ui.heatTo, t));
   el.style.setProperty('--heat-t', t.toFixed(3));
 }
@@ -277,11 +362,11 @@ function paint(el, ch){
   hit.href = ch.url;
   hit.setAttribute('aria-label', 'Open ' + ch.name + ' on YouTube');
 
-  el.querySelector('.card-name').textContent = ch.name;
+  el._parts.name.textContent = ch.name;
 
   /* The avatar is the fastest way to find a channel on a board of forty, and
      the one thing the board could not say about a channel until now. */
-  const av = el.querySelector('.av');
+  const av = el._parts.avatar;
   const img = av.querySelector('img');
   av.classList.toggle('has', !!ch.avatar);
   if (ch.avatar && img.getAttribute('src') !== ch.avatar) img.src = ch.avatar;
@@ -291,15 +376,18 @@ function paint(el, ch){
   img.onerror = () => { av.classList.remove('has'); img.removeAttribute('src') };
 
   el.classList.toggle('is-new', Store.isNew(ch));
-  const nw = el.querySelector('.new');
-  nw.textContent = '';
-  if (Store.isNew(ch) && ch.latest && ch.latest.title) nw.title = ch.latest.title;
+  /* Posted in the last day: not a dot but a whole card — a lit edge, a warmer
+     ground and a glow, so what is worth opening right now is visible from the
+     other side of the board. */
+  el.classList.toggle('is-fresh', Store.isFresh(ch));
+  if (ch.latest && ch.latest.title)
+    el._parts.dot.title = ch.latest.title + ' — click to clear';
 
-  const d = el.querySelector('.card-desc');
+  const d = el._parts.desc;
   d.textContent = ch.desc || 'no description';
   d.classList.toggle('none', !ch.desc);
 
-  const t = el.querySelector('.tag');
+  const t = el._parts.tag;
   t.textContent = '';
   const ic = cat && iconEl(cat.icon);
   if (ic) t.appendChild(ic);
@@ -308,7 +396,7 @@ function paint(el, ch){
   t.classList.toggle('has-icon', !!ic);
 
   paintHeat(el, ch);
-  paintBadges(el, ch);
+  paintBadges(el, ch);              /* which ends by placing everything */
 }
 
 /* ── FLIP ────────────────────────────────────────────────────────────────────
@@ -349,7 +437,18 @@ function flip(mutate){
   });
 }
 
-/* ── Render ──────────────────────────────────────────────────────────────── */
+/* ── Render ────────────────────────────────────────────────────────────────
+   Two ways a board can change shape, and they want different animations.
+
+   A **reorder** — a different sort, a different card size — is the same set of
+   cards in new boxes, so it is a FLIP: measure, move, play each card back from
+   where it was. A **filter** is not that. Turning on a category leaves a board
+   that mostly has nothing to do with the one before it, and FLIPping it makes
+   the survivors slide in from wherever they happened to have been, which is the
+   "sliding into place" this was asked to stop doing. So a filter change replays
+   the board's own entry instead: the same staggered rise as opening HUB. */
+let reintro = false;
+
 function render(){
   const items = list();
   const total = Store.channels().length;
@@ -359,15 +458,19 @@ function render(){
   renderCatBar();
   renderChips();
   renderQueue();
+  renderDots();
 
   const cats = Store.cats().length;
   $('#meta').textContent = total
-    ? total + (total === 1 ? ' channel' : ' channels') + ' \u00b7 ' +
+    ? total + (total === 1 ? ' channel' : ' channels') + ' · ' +
       cats + (cats === 1 ? ' category' : ' categories') +
-      (items.length !== total ? ' \u00b7 ' + items.length + ' shown' : '')
+      (items.length !== total ? ' · ' + items.length + ' shown' : '')
     : 'no channels yet';
 
-  flip(() => {
+  const intro = reintro; reintro = false;
+  const entering = [];
+
+  const mutate = () => {
     const keep = new Set(items.map(c => c.id));
 
     /* gone from the board — fade the node out, then drop it */
@@ -385,13 +488,27 @@ function render(){
       if (!el){
         el = build(ch);
         nodes.set(ch.id, el);
-        el.style.setProperty('--i', i);
-        el.classList.add('in');
-      }
+        entering.push([el, i]);
+      } else if (intro) entering.push([el, i]);
       paint(el, ch);
       grid.appendChild(el);            /* appendChild moves an existing node */
     });
-  });
+
+    /* Off first, all of them, so the class can be put back on a card that
+       already had it and actually restart the animation. */
+    entering.forEach(([el]) => el.classList.remove('in'));
+  };
+
+  if (intro || REDUCED) mutate();
+  else flip(mutate);
+
+  if (entering.length && !REDUCED){
+    void grid.offsetWidth;             /* one reflow for the lot, then play */
+    entering.forEach(([el, i]) => {
+      el.style.setProperty('--i', i);
+      el.classList.add('in');
+    });
+  }
 
   empty.hidden = items.length > 0;
   if (!items.length){
@@ -400,6 +517,22 @@ function render(){
       ? 'try a different category, or clear the search'
       : 'add a channel to start the board';
   }
+}
+
+/* ── The dots, all at once ───────────────────────────────────────────────────
+   A board seeded in one go — the "+ add" button over a subscriptions page adds
+   forty channels in a pass — arrives with a dot on every card, because every
+   one of them has posted since a `seen` it has never had. That is forty marks
+   saying the same nothing. This clears the lot.
+
+   It stamps an acknowledgement, not a view: the cards still say never opened,
+   because they have not been. */
+function renderDots(){
+  const btn = $('#btn-dots');
+  if (!btn) return;
+  const n = Store.countNew();
+  btn.hidden = !n;
+  $('#dots-n').textContent = n ? String(n) : '';
 }
 
 /* ── Category filter chips ───────────────────────────────────────────────────
@@ -414,16 +547,19 @@ function renderChips(){
   const all = document.createElement('button');
   all.className = 'chip all' + (picked.size ? '' : ' on');
   all.textContent = 'all';
-  all.addEventListener('click', () => { picked.clear(); render() });
+  all.addEventListener('click', () => { picked.clear(); reintro = true; render() });
   chips.appendChild(all);
 
-  Store.cats().forEach(c => {
+  /* Favourites first. The manager's order is Hugo's and stays his; this is the
+     order of the bar you actually pick from, where the four categories used
+     every day should not be somewhere in the middle of eleven. */
+  Store.pickCats().forEach(c => {
     const n = chans.filter(x => x.cat === c.id).length;
     /* An empty category still exists — it is only kept out of the bar. One that
        is switched on stays, or turning it off would need a trip to settings. */
     if (ui.hideEmpty && !n && !picked.has(c.id)) return;
     const b = document.createElement('button');
-    b.className = 'chip' + (picked.has(c.id) ? ' on' : '');
+    b.className = 'chip' + (picked.has(c.id) ? ' on' : '') + (c.fav ? ' fav' : '');
     b.style.setProperty('--c', c.color);
     b.innerHTML = '<span class="t"></span><span class="n"></span>';
     const ic = iconEl(c.icon);
@@ -431,7 +567,7 @@ function renderChips(){
     b.classList.toggle('has-icon', !!ic);
     b.querySelector('.t').textContent = c.name;
     b.querySelector('.n').textContent = n;
-    b.addEventListener('click', () => { toggle(c.id); render() });
+    b.addEventListener('click', () => { toggle(c.id); reintro = true; render() });
     chips.appendChild(b);
   });
 
@@ -441,12 +577,11 @@ function renderChips(){
     b.style.setProperty('--c', 'var(--mu)');
     b.innerHTML = '<span class="t">uncategorised</span><span class="n"></span>';
     b.querySelector('.n').textContent = loose;
-    b.addEventListener('click', () => { toggle(''); render() });
+    b.addEventListener('click', () => { toggle(''); reintro = true; render() });
     chips.appendChild(b);
   }
 }
 function toggle(id){ picked.has(id) ? picked.delete(id) : picked.add(id) }
-
 
 /* ── Categorise mode ─────────────────────────────────────────────────────────
    The quick menu on a tag files one channel. This files many: pick a category
@@ -481,7 +616,7 @@ function renderCatBar(){
     box.appendChild(b);
   };
 
-  Store.cats().forEach(c => pick(c.id, c.name, c.color, c.icon));
+  Store.pickCats().forEach(c => pick(c.id, c.name, c.color, c.icon));
   pick('', 'uncategorised', 'var(--mu)', '');
 }
 
@@ -562,7 +697,7 @@ function catPicker(sel, onPick){
   };
 
   box.appendChild(mk('', 'none', 'var(--mu)', !sel));
-  Store.cats().forEach(c => box.appendChild(mk(c.id, c.name, c.color, sel === c.id)));
+  Store.pickCats().forEach(c => box.appendChild(mk(c.id, c.name, c.color, sel === c.id)));
 }
 
 function openChannel(id){
@@ -723,6 +858,22 @@ function renderCats(){
     r.className = 'cat-r';
     r.style.setProperty('--c', c.color);
 
+    /* ── Favourite ───────────────────────────────────────────────────────────
+       A star, first in the row, because it is the only thing here that changes
+       where the category shows up rather than what it looks like. Favourites
+       are pinned to the front of the chips, the quick menu and the filing bar —
+       every list you pick a category from — while the order in this pane, which
+       is set by hand with the arrows, is left exactly as it is. */
+    const fb = document.createElement('button');
+    fb.type = 'button';
+    fb.className = 'cat-fav' + (c.fav ? ' on' : '');
+    fb.dataset.fav = c.id;
+    fb.title = c.fav ? 'A favourite — first in every picker' : 'Make it a favourite';
+    fb.setAttribute('aria-pressed', c.fav ? 'true' : 'false');
+    fb.textContent = c.fav ? '★' : '☆';
+    fb.addEventListener('click', () => { Store.toggleFav(c.id); renderCats(); render() });
+    r.appendChild(fb);
+
     /* The icon comes before the colour, because it is the thing you read on a
        card first. */
     const ib = document.createElement('button');
@@ -805,6 +956,22 @@ $('#f-newcat').addEventListener('submit', e => {
 });
 
 $('#btn-cats').addEventListener('click', () => { openIconFor = null; renderCats(); openSheet('cat') });
+$('#btn-card').addEventListener('click', () => { renderCard(); openSheet('card') });
+
+/* Every dot at once. Two steps, like every other clearing button on the board:
+   the first arms it, the second does it. Nothing is destroyed — the dots come
+   back the moment any of these channels posts again — but forty of them is not
+   a thing to undo by hand, so it asks. */
+$('#btn-dots').addEventListener('click', function(){
+  if (!this.classList.contains('armed')){
+    this.classList.add('armed');
+    setTimeout(() => this.classList.remove('armed'), 3000);
+    return;
+  }
+  this.classList.remove('armed');
+  Store.clearNew();
+  render();          /* the button going away is the answer */
+});
 $('#btn-add').addEventListener('click', () => openChannel(null));
 $('#btn-set').addEventListener('click', () => { renderSettings(); openSheet('set') });
 
@@ -849,7 +1016,7 @@ function openQuick(id, anchor){
     return b;
   };
 
-  Store.cats().forEach(c =>
+  Store.pickCats().forEach(c =>
     qmenu.appendChild(pick(c.id, c.name, c.color, c.icon, ch.cat === c.id)));
   qmenu.appendChild(pick('', 'uncategorised', 'var(--mu)', '', !ch.cat));
 
@@ -884,44 +1051,93 @@ const widthLabel = w => (!w || w >= WIDTH_FULL) ? 'full width' : w + 'px';
    below write, and every one of them is still yours afterwards. That is why
    there is no "custom" preset and nothing is highlighted: once you move a dial
    you are not on a preset any more, and pretending otherwise would be a lie the
-   settings pane tells about itself. */
+   settings pane tells about itself.
+
+   Since the card editor, a preset writes slots and zones too, which is what
+   makes "poster" a different card rather than the same card with a bigger
+   picture: the avatar and the name are stacked in the top-left zone instead of
+   sitting side by side in it. */
 const PRESETS = [
-  { name:'classic', ui:{ layout:'card', avatarPos:'left', badgePos:'bottom',
+  { name:'classic', ui:{ layout:'card',
+      slots:{ avatar:'tl', dot:'tr', name:'tl', desc:'ml', tag:'bl', badges:'br',
+              count:'br', edit:'tr' },
+      zones:{ tl:'row', tr:'row', ml:'top', mr:'top', bl:'row', br:'row' },
       avatarSize:30, nameLines:2, gap:12, border:'hairline', surface:'raised',
       showDesc:true, descLines:4, showAvatars:true,
-      avatarShape:'circle', avatarBorder:'hairline', nameAlign:'center',
-      countStyle:'badge', newDotPos:'corner', nameSize:17, descSize:12.5, badgeSize:10 } },
-  { name:'compact', ui:{ layout:'compact', avatarPos:'left', badgePos:'bottom',
+      avatarShape:'circle', avatarBorder:'hairline', dotOnAvatar:false,
+      countStyle:'badge', nameSize:17, descSize:12.5, badgeSize:10 } },
+  { name:'compact', ui:{ layout:'compact',
+      slots:{ avatar:'tl', dot:'tl', name:'tl', desc:'ml', tag:'bl', badges:'br',
+              count:'br', edit:'tr' },
+      zones:{ tl:'row', tr:'row', ml:'top', mr:'top', bl:'row', br:'row' },
       avatarSize:24, nameLines:1, gap:8, border:'hairline', surface:'raised',
       showDesc:false, showAvatars:true,
-      avatarShape:'circle', avatarBorder:'none', nameAlign:'center',
-      countStyle:'badge', newDotPos:'name', nameSize:15, badgeSize:9.5 } },
-  { name:'list', ui:{ layout:'list', avatarPos:'left', badgePos:'bottom',
+      avatarShape:'circle', avatarBorder:'none', dotOnAvatar:false,
+      countStyle:'badge', nameSize:15, badgeSize:9.5 } },
+  { name:'list', ui:{ layout:'list',
+      slots:{ avatar:'tl', dot:'tl', name:'tl', desc:'ml', tag:'bl', badges:'br',
+              count:'br', edit:'tr' },
+      zones:{ tl:'row', tr:'row', ml:'top', mr:'top', bl:'row', br:'row' },
       avatarSize:28, nameLines:1, gap:6, border:'hairline', surface:'flat',
       showDesc:false, showAvatars:true,
-      avatarShape:'rounded', avatarBorder:'none', nameAlign:'center',
-      countStyle:'number', newDotPos:'name', nameSize:14.5, badgeSize:9.5 } },
-  { name:'poster', ui:{ layout:'card', avatarPos:'top', badgePos:'top',
+      avatarShape:'rounded', avatarBorder:'none', dotOnAvatar:false,
+      countStyle:'number', nameSize:14.5, badgeSize:9.5 } },
+  { name:'poster', ui:{ layout:'card',
+      slots:{ avatar:'tl', dot:'tr', name:'tl', desc:'ml', tag:'bl', badges:'bl',
+              count:'br', edit:'tr' },
+      zones:{ tl:'column', tr:'row', ml:'top', mr:'top', bl:'column', br:'row' },
       avatarSize:52, nameLines:2, gap:16, border:'accent', surface:'raised',
       showDesc:true, descLines:3, showAvatars:true,
-      avatarShape:'rounded', avatarBorder:'accent', nameAlign:'top',
-      countStyle:'number', newDotPos:'avatar', nameSize:19, descSize:12, badgeSize:10 } },
+      avatarShape:'rounded', avatarBorder:'accent', dotOnAvatar:true,
+      countStyle:'number', nameSize:19, descSize:12, badgeSize:10 } },
+];
+
+/* ── The card editor ─────────────────────────────────────────────────────────
+   Its own pane, because a card is its own thing: a live one at the top, built
+   and painted by the same two functions the board uses, and under it every dial
+   that decides what it looks like. Nothing there is a preview in the sense of
+   an approximation — it is a card, drawn by the renderer, from the settings as
+   they stand this instant.
+
+   `part` rows are the new control: a switch for whether the part is on the card
+   at all, and a six-cell map of the card for where it goes. */
+const CARD_SETTINGS = [
+  ['shape', [
+    { k:'preset', t:'preset', label:'presets',
+      note:'a starting point, not a mode: every dial below stays yours' },
+    { k:'layout',  t:'seg',   label:'card shape', opts:['card', 'compact', 'list'] },
+    { k:'gap',     t:'range', label:'space between cards', min:4, max:28, step:2, fmt:v => v + 'px' },
+    { k:'border',  t:'seg',   label:'card edge', opts:['hairline', 'none', 'accent'] },
+    { k:'surface', t:'seg',   label:'card ground', opts:['raised', 'flat'] },
+  ]],
+  ['where each part sits', HubModel.PARTS.map(pt =>
+    ({ k:'slot-' + pt.k, t:'part', part:pt.k, label:pt.label, show:pt.show }))],
+  ['how each zone stacks', [
+    { k:'zones', t:'zones', label:'the six zones',
+      note:'side by side, hung from the top, or stacked' },
+  ]],
+  ['the parts themselves', [
+    { k:'avatarSize',   t:'range', label:'avatar size', min:20, max:72, step:2, fmt:v => v + 'px' },
+    { k:'avatarShape',  t:'seg',   label:'avatar shape', opts:['circle', 'rounded', 'square'] },
+    { k:'avatarBorder', t:'seg',   label:'avatar edge', opts:['hairline', 'none', 'accent'] },
+    { k:'nameLines',    t:'range', label:'lines for the name', min:1, max:4, step:1, fmt:String },
+    { k:'descLines',    t:'range', label:'description lines', min:1, max:8, step:1, fmt:String },
+    { k:'countStyle',   t:'seg',   label:'how the count reads',
+      opts:['badge', 'number'], note:'a badge among the others, or a number of its own' },
+    { k:'dotOnAvatar',  t:'toggle', label:'pin the dot to the avatar',
+      note:'the corner of the picture, which is the one place that is not a zone' },
+    { k:'newDotSize',   t:'range', label:'dot size', min:4, max:14, step:1, fmt:v => v + 'px' },
+    { k:'newDotColor',  t:'color', label:'dot colour', accent:true },
+  ]],
+  ['posted today', [
+    { k:'showFresh',  t:'toggle', label:'light up a card with a fresh upload',
+      note:'a lit edge and a glow, so it reads from across the board' },
+    { k:'freshHours', t:'range', label:'how fresh is fresh', min:1, max:72, step:1,
+      fmt:v => v + 'h' },
+  ]],
 ];
 
 const SETTINGS = [
-  ['layout', [
-    { k:'preset',     t:'preset', label:'presets',
-      note:'a starting point, not a mode: every dial below stays yours' },
-    { k:'layout',     t:'seg',   label:'card shape', opts:['card', 'compact', 'list'] },
-    { k:'avatarPos',  t:'seg',   label:'avatar', opts:['left', 'top'] },
-    { k:'badgePos',   t:'seg',   label:'badges', opts:['bottom', 'top'] },
-    { k:'avatarSize', t:'range', label:'avatar size', min:20, max:56, step:2, fmt:v => v + 'px' },
-    { k:'nameLines',  t:'range', label:'lines for the name', min:1, max:4, step:1, fmt:String },
-    { k:'gap',        t:'range', label:'space between cards', min:4, max:28, step:2, fmt:v => v + 'px' },
-    { k:'nameAlign',  t:'seg',   label:'name beside the avatar', opts:['center', 'top'] },
-    { k:'border',     t:'seg',   label:'card edge', opts:['hairline', 'none', 'accent'] },
-    { k:'surface',    t:'seg',   label:'card ground', opts:['raised', 'flat'] },
-  ]],
   ['type', [
     { k:'titleSize', t:'range', label:'the wordmark', min:28, max:80, step:2, fmt:v => v + 'px' },
     { k:'nameSize',  t:'range', label:'channel name', min:12, max:26, step:.5, fmt:v => v + 'px' },
@@ -929,41 +1145,37 @@ const SETTINGS = [
     { k:'badgeSize', t:'range', label:'badges', min:8, max:14, step:.5, fmt:v => v + 'px' },
   ]],
   ['look', [
-    { k:'accent',   t:'color',  label:'accent colour' },
-    { k:'maxWidth', t:'range',  label:'content width', min:880, max:WIDTH_FULL, step:40,
+    { k:'accent',   t:'color', label:'accent colour' },
+    { k:'maxWidth', t:'range', label:'content width', min:880, max:WIDTH_FULL, step:40,
       note:'an ultrawide does not want the whole screen', fmt:widthLabel, full:WIDTH_FULL },
-    { k:'radius',   t:'range',  label:'corner radius', min:0, max:16, step:1, fmt:v => v + 'px' },
-    { k:'motion',   t:'range',  label:'motion', min:0, max:2, step:0.1,
+    { k:'radius',   t:'range', label:'corner radius', min:0, max:16, step:1, fmt:v => v + 'px' },
+    { k:'motion',   t:'range', label:'motion', min:0, max:2, step:0.1,
       fmt:v => v <= 0 ? 'none' : (+v).toFixed(1) + 'x' },
   ]],
-  ['cards', [
-    { k:'showAvatars', t:'toggle', label:'channel avatars',
-      note:'read off the channel page, in the extension only' },
-    { k:'avatarShape', t:'seg', label:'avatar shape', opts:['circle', 'rounded', 'square'] },
-    { k:'avatarBorder', t:'seg', label:'avatar edge', opts:['hairline', 'none', 'accent'] },
-    { k:'showNew',     t:'toggle', label:'a dot when a channel has posted since you last looked' },
-    { k:'newDotPos',   t:'seg',   label:'where the dot sits', opts:['corner', 'name', 'avatar'] },
-    { k:'newDotSize',  t:'range', label:'dot size', min:4, max:14, step:1, fmt:v => v + 'px' },
-    { k:'newDotColor', t:'color', label:'dot colour', accent:true },
-    { k:'showDesc',    t:'toggle', label:'description' },
-    { k:'descLines',   t:'range', label:'description lines', min:1, max:8, step:1, fmt:v => String(v) },
-    { k:'showTag',     t:'toggle', label:'category tag' },
-    { k:'showSeen',    t:'toggle', label:'time since last viewed' },
-    { k:'showCounts',  t:'toggle', label:'click counts' },
-    { k:'countStyle',  t:'seg',   label:'how the count reads',
-      opts:['badge', 'number'], note:'a number sits in the corner at the name size' },
-    { k:'showHeat',    t:'toggle', label:'click heat line' },
-    { k:'showPosted',  t:'toggle', label:'when the channel last posted',
-      note:'read from its feed, in the extension only' },
-    { k:'showAdded',   t:'toggle', label:'when you added it' },
-    { k:'showRank',    t:'toggle', label:'its place on the board by clicks' },
-    { k:'showQueued',  t:'toggle', label:'how many of its videos you have queued' },
-    { k:'showHandle',  t:'toggle', label:'its youtube handle' },
-    { k:'heat',        t:'heat',   label:'heat gradient',
+  ['the card', [
+    { k:'cardeditor', t:'link', label:'open the card editor',
+      note:'what a card shows, and where on it each part sits' },
+  ]],
+  ['what a card says', [
+    { k:'showSeen',   t:'toggle', label:'time since last viewed' },
+    { k:'showCounts', t:'toggle', label:'click counts' },
+    { k:'showHeat',   t:'toggle', label:'click heat line' },
+    { k:'heat',       t:'heat',   label:'heat gradient',
       note:'from the channel you open least to the one you open most' },
+    { k:'heatSteps',  t:'range',  label:'how many colours the heat has',
+      min:2, max:20, step:1, fmt:v => v + ' steps',
+      note:'a scale you can read one card against another with' },
+    { k:'showPosted', t:'toggle', label:'when the channel last posted',
+      note:'read from its feed, in the extension only' },
+    { k:'showAdded',  t:'toggle', label:'when you added it' },
+    { k:'showRank',   t:'toggle', label:'its place on the board by clicks' },
+    { k:'showQueued', t:'toggle', label:'how many of its videos you have queued' },
+    { k:'showHandle', t:'toggle', label:'its youtube handle' },
   ]],
   ['board', [
     { k:'hideEmpty',  t:'toggle', label:'hide empty categories' },
+    { k:'favFirst',   t:'toggle', label:'favourite categories first',
+      note:'in the chips, the quick menu and the filing bar' },
     { k:'enterOpens', t:'toggle', label:'enter opens the first result',
       note:'type in search, press enter' },
     { k:'newTab',     t:'toggle', label:'open channels in a new tab', ext:true },
@@ -973,8 +1185,13 @@ const SETTINGS = [
       note:'stops the guard and puts a + add button on channel pages', ext:true },
     { k:'queueButton', t:'toggle', label:'a + queue button on video pages', ext:true },
     { k:'checkNew',    t:'toggle', label:'check channels for new videos', ext:true },
-    { k:'checkEvery',  t:'range',  label:'how often', min:1, max:48, step:1,
+    { k:'checkEvery',  t:'range',  label:'how often the feed is checked', min:1, max:48, step:1,
       fmt:v => v + 'h', ext:true },
+    { k:'pageDays',    t:'range',  label:'how long an avatar is trusted', min:1, max:60, step:1,
+      fmt:v => v + (v === 1 ? ' day' : ' days'),
+      note:'a channel page is a megabyte and an avatar never changes', ext:true },
+    { k:'lanes',       t:'range',  label:'channels asked at once', min:1, max:8, step:1,
+      fmt:String, note:'the whole of how fast a refresh is', ext:true },
   ]],
 ];
 
@@ -984,7 +1201,15 @@ const inExt = () => typeof HubBridge !== 'undefined' && HubBridge.inExt;
    Four of the dials are tokens the whole stylesheet already draws with, so
    setting them here moves the system rather than one rule. The card toggles are
    classes on the grid, for the same reason: one switch, not a pass over every
-   card. */
+   card.
+
+   `boards` is the board itself plus the card editor's own one-card grid, so the
+   card in the editor is drawn by exactly the rules the board is drawn by. */
+function boards(){
+  const prev = $('#card-prev');
+  return prev ? [grid, prev] : [grid];
+}
+
 function applyLook(){
   const r = document.documentElement.style;
   r.setProperty('--app-w', (!ui.maxWidth || ui.maxWidth >= WIDTH_FULL) ? 'none' : ui.maxWidth + 'px');
@@ -996,15 +1221,30 @@ function applyLook(){
   r.setProperty('--av-size', ui.avatarSize + 'px');
   r.setProperty('--grid-gap', ui.gap + 'px');
 
-  grid.dataset.layout = ui.layout;
-  grid.dataset.avatarPos = ui.avatarPos;
-  grid.dataset.badges = ui.badgePos;
-  grid.dataset.border = ui.border;
-  grid.dataset.surface = ui.surface;
-  grid.dataset.avatarBorder = ui.avatarBorder;
-  grid.dataset.nameAlign = ui.nameAlign;
-  grid.dataset.dot = ui.newDotPos;
-  grid.dataset.count = ui.countStyle;
+  boards().forEach(g => {
+    g.dataset.layout = ui.layout;
+    g.dataset.border = ui.border;
+    g.dataset.surface = ui.surface;
+    g.dataset.avatarBorder = ui.avatarBorder;
+    g.dataset.count = ui.countStyle;
+    g.dataset.avatar = ui.avatarShape;
+    g.dataset.dot = ui.dotOnAvatar ? 'avatar' : 'slot';
+    /* Every zone's own direction, as one attribute each. A zone is a flex box
+       and this is which way it runs, which is the only thing the stylesheet
+       needs to be told about the card editor at all. */
+    /* setAttribute, not dataset: `dataset.zoneTL` spells itself data-zone-t-l,
+       which is a different attribute from the one the stylesheet selects. */
+    HubModel.ZONES.forEach(z => { g.setAttribute('data-zone-' + z, ui.zones[z]) });
+
+    g.classList.toggle('no-heat',   !ui.showHeat);
+    g.classList.toggle('no-counts', !ui.showCounts);
+    g.classList.toggle('no-avatar', !ui.showAvatars);
+    g.classList.toggle('no-desc',   !ui.showDesc);
+    g.classList.toggle('no-tag',    !ui.showTag);
+    g.classList.toggle('no-seen',   !ui.showSeen);
+    g.classList.toggle('no-new',    !ui.showNew);
+    g.classList.toggle('no-fresh',  !ui.showFresh);
+  });
 
   r.setProperty('--name-px', ui.nameSize + 'px');
   r.setProperty('--desc-px', ui.descSize + 'px');
@@ -1012,29 +1252,30 @@ function applyLook(){
   r.setProperty('--title-px', ui.titleSize + 'px');
   r.setProperty('--dot-size', ui.newDotSize + 'px');
   r.setProperty('--dot-c', ui.newDotColor || 'var(--y)');
-
-  grid.classList.toggle('no-heat',   !ui.showHeat);
-  grid.classList.toggle('no-counts', !ui.showCounts);
-  grid.classList.toggle('no-avatar', !ui.showAvatars);
-  grid.classList.toggle('no-desc',   !ui.showDesc);
-  grid.classList.toggle('no-tag',    !ui.showTag);
-  grid.classList.toggle('no-seen',   !ui.showSeen);
-  grid.classList.toggle('no-new',    !ui.showNew);
-  grid.dataset.avatar = ui.avatarShape;
 }
 
 function write(key, value){
   ui = Store.setUi({ [key]: value });
   applyLook();
   render();
+  renderPreview();
   if (key === 'addMode' && inExt()) HubBridge.ask({ type:'setAddMode', on:ui.addMode });
 }
 
-function renderSettings(){
-  const box = $('#set-body');
-  box.textContent = '';
+/* A slot and a zone direction are one key each inside an object, so they are
+   written as the whole object. The store fills anything missing back in, which
+   is what keeps a half-written slots map from ever reaching storage. */
+const writeSlot = (part, zone) => write('slots', { ...ui.slots, [part]:zone });
+const writeZone = (zone, dir)  => write('zones', { ...ui.zones, [zone]:dir });
 
-  SETTINGS.forEach(([name, items]) => {
+function renderSettings(){
+  buildPane($('#set-body'), SETTINGS);
+  $('#s-refresh').hidden = !(typeof HubEnrich !== 'undefined' && HubEnrich.can());
+}
+
+function buildPane(box, spec){
+  box.textContent = '';
+  spec.forEach(([name, items]) => {
     const live = items.filter(it => !it.ext || inExt());
     if (!live.length) return;
     const h = document.createElement('p');
@@ -1043,8 +1284,59 @@ function renderSettings(){
     box.appendChild(h);
     live.forEach(it => box.appendChild(control(it)));
   });
+}
 
-  $('#s-refresh').hidden = !(typeof HubEnrich !== 'undefined' && HubEnrich.can());
+/* ── The card editor ─────────────────────────────────────────────────────────
+   One real card at the top and every dial under it. The card is built by
+   `build` and painted by `paint` — the board's own two functions — inside a
+   `.grid` of its own, so it inherits every rule the board's cards do and there
+   is no second renderer to keep in step.
+
+   It stands in for a channel when the board is empty, and is the first channel
+   on it otherwise: editing the look of a card you recognise beats editing the
+   look of a sample. */
+const SAMPLE_AVATAR =
+  'data:image/svg+xml,' + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">' +
+    '<rect width="64" height="64" fill="#252525"/>' +
+    '<circle cx="32" cy="26" r="11" fill="#4a4a4a"/>' +
+    '<path d="M10 62c0-13 10-21 22-21s22 8 22 21z" fill="#4a4a4a"/></svg>');
+
+function sampleChannel(){
+  const real = Store.channels()[0];
+  const base = {
+    id:'__preview__', url:'https://www.youtube.com/@example', name:'@example',
+    desc:'what it is, and why it is on the board',
+    cat:(Store.cats()[0] || {}).id || '',
+    added:Date.now() - 12 * DAY, seen:Date.now() - 5 * HR, clicks:Store.maxClicks() || 8,
+    ytId:'UCpreview', avatar:SAMPLE_AVATAR, checkedAt:Date.now(), pageAt:Date.now(), dotAt:0,
+    latest:{ videoId:'preview', title:'a video from two hours ago', at:Date.now() - 2 * HR },
+  };
+  if (!real) return base;
+  return { ...base, name:real.name, desc:real.desc || base.desc, cat:real.cat,
+           url:real.url, clicks:real.clicks || base.clicks,
+           avatar:real.avatar || SAMPLE_AVATAR, added:real.added || base.added,
+           seen:real.seen || base.seen };
+}
+
+let previewCard = null;
+
+function renderPreview(){
+  const box = $('#card-prev');
+  if (!box) return;
+  const ch = sampleChannel();
+  if (!previewCard || !previewCard.isConnected){
+    box.textContent = '';
+    previewCard = build(ch);
+    box.appendChild(previewCard);
+  }
+  paint(previewCard, ch);
+}
+
+function renderCard(){
+  buildPane($('#card-body'), CARD_SETTINGS);
+  previewCard = null;
+  renderPreview();
 }
 
 function control(it){
@@ -1080,7 +1372,11 @@ function control(it){
 
   if (it.t === 'range'){
     const wrap = document.createElement('div');
-    wrap.className = 'set-range';
+    /* Not `set-range`: the row itself is `set-r set-<type>`, so a wrapper by
+       that name was the same class as its own parent. `#set-body` is a column
+       flex box, so the row inherited `flex:0 0 210px` as a *height* and every
+       slider in settings sat in a 210px-tall row. */
+    wrap.className = 'set-slide';
     const inp = document.createElement('input');
     inp.type = 'range'; inp.min = it.min; inp.max = it.max; inp.step = it.step;
     inp.value = (it.full && !ui[it.k]) ? it.full : ui[it.k];
@@ -1151,12 +1447,109 @@ function control(it){
         ui = Store.setUi(p2.ui);
         applyLook();
         render();
+        /* Both panes carry the presets row, and a preset moves dials in both,
+           so both are redrawn — whichever one it was pressed in. */
         renderSettings();
+        renderCard();
         said('applied ' + p2.name);
       });
       row2.appendChild(b);
     });
     row.appendChild(row2);
+  }
+
+  /* ── A part, and where it sits ─────────────────────────────────────────────
+     The row for one movable piece of a card: a switch for whether it is on the
+     card at all, and a map of the card — six cells, two to a row, in the shape
+     of the thing being edited — for which zone it lives in. Clicking a cell is
+     the whole gesture; there is nothing to drag and nothing to drop. */
+  if (it.t === 'part'){
+    if (it.show){
+      const sw = document.createElement('button');
+      sw.type = 'button';
+      sw.className = 'part-sw' + (ui[it.show] ? ' on' : '');
+      sw.dataset.show = it.show;
+      sw.title = ui[it.show] ? 'on the card' : 'off the card';
+      sw.setAttribute('aria-pressed', ui[it.show] ? 'true' : 'false');
+      sw.appendChild(document.createElement('b'));
+      sw.addEventListener('click', () => {
+        write(it.show, !ui[it.show]);
+        sw.classList.toggle('on', !!ui[it.show]);
+        sw.setAttribute('aria-pressed', ui[it.show] ? 'true' : 'false');
+        sw.title = ui[it.show] ? 'on the card' : 'off the card';
+      });
+      row.appendChild(sw);
+    }
+
+    const map = document.createElement('div');
+    map.className = 'zone-map';
+    HubModel.ZONES.forEach(z => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'zc' + (ui.slots[it.part] === z ? ' on' : '');
+      b.dataset.z = z;
+      b.title = HubModel.ZONE_NAMES[z];
+      b.setAttribute('aria-label', it.label + ': ' + HubModel.ZONE_NAMES[z]);
+      b.addEventListener('click', () => {
+        writeSlot(it.part, z);
+        [...map.children].forEach(x => x.classList.toggle('on', x === b));
+      });
+      map.appendChild(b);
+    });
+    row.appendChild(map);
+  }
+
+  /* ── The zones ─────────────────────────────────────────────────────────────
+     Six cells again, in the same shape, but each one is a choice rather than a
+     target: whether what is in that zone sits side by side, hangs from the top,
+     or stacks. That last one is how the avatar gets above the name rather than
+     beside it, which used to be its own setting and is now a property of the
+     place it is in. */
+  if (it.t === 'zones'){
+    row.classList.add('as-block');
+    const map = document.createElement('div');
+    map.className = 'zone-grid';
+    const DIRS = [['row', '↔', 'side by side'],
+                  ['top', '↱', 'hung from the top'],
+                  ['column', '↕', 'stacked']];
+    HubModel.ZONES.forEach(z => {
+      const cell = document.createElement('div');
+      cell.className = 'zg';
+      cell.dataset.z = z;
+      const k = document.createElement('span');
+      k.className = 'zg-k';
+      k.textContent = HubModel.ZONE_NAMES[z];
+      cell.appendChild(k);
+      const seg = document.createElement('div');
+      seg.className = 'seg';
+      DIRS.forEach(([v, glyph, label]) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'seg-b' + (ui.zones[z] === v ? ' on' : '');
+        b.dataset.v = v;
+        b.textContent = glyph;
+        b.title = label;
+        b.setAttribute('aria-label', HubModel.ZONE_NAMES[z] + ': ' + label);
+        b.addEventListener('click', () => {
+          writeZone(z, v);
+          [...seg.children].forEach(x => x.classList.toggle('on', x === b));
+        });
+        seg.appendChild(b);
+      });
+      cell.appendChild(seg);
+      map.appendChild(cell);
+    });
+    row.appendChild(map);
+  }
+
+  /* A row that is a door to another pane rather than a setting of its own. */
+  if (it.t === 'link'){
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'btn btn-s';
+    b.textContent = 'open';
+    b.addEventListener('click', () => { renderCard(); openSheet('card') });
+    row.appendChild(b);
   }
 
   if (it.t === 'heat'){

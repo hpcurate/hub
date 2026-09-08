@@ -14,7 +14,7 @@
 const Store = (() => {
 
   const { KEYS, PALETTE, DEFAULT_UI, uid,
-          normUrl, nameFromUrl, makeChannel, makeQueued, fillChannel, fillCat, seedCats,
+          normUrl, nameFromUrl, makeChannel, makeQueued, fillChannel, fillCat, fillUi, seedCats,
           buildExport, readExport } = HubModel;
 
   /* chrome.storage.local, or nothing. `chrome` exists in places that cannot
@@ -50,7 +50,7 @@ const Store = (() => {
     cats = Array.isArray(rawCat) && rawCat.length
       ? rawCat.map(fillCat).sort((a, b) => a.order - b.order)
       : null;
-    ui = { ...DEFAULT_UI, ...(rawUi && typeof rawUi === 'object' ? rawUi : {}) };
+    ui = fillUi(rawUi);
     return cats === null;                             /* true: needs seeding */
   }
 
@@ -155,8 +155,8 @@ const Store = (() => {
     maxClicks: () => channels.reduce((m, c) => Math.max(m, c.clicks || 0), 0),
     nameFromUrl, normUrl,
 
-    ui:    () => ({ ...ui }),
-    setUi(patch){ ui = { ...ui, ...patch }; saveUi(); return { ...ui } },
+    ui:    () => ({ ...ui, slots:{ ...ui.slots }, zones:{ ...ui.zones } }),
+    setUi(patch){ ui = fillUi({ ...ui, ...patch }); saveUi(); return this.ui() },
 
     /* ── Channels ──────────────────────────────────────────────────────── */
     addChannel(data){
@@ -189,6 +189,7 @@ const Store = (() => {
       if (info.avatar) ch.avatar = info.avatar;
       if (info.latest) ch.latest = info.latest;
       if (info.checkedAt) ch.checkedAt = info.checkedAt;
+      if (info.pageAt) ch.pageAt = info.pageAt;
       saveCh();
       return ch;
     },
@@ -198,7 +199,38 @@ const Store = (() => {
        between two facts already on the record. */
     isNew(ch){
       if (!ui.showNew || !ch || !ch.latest || !ch.latest.at) return false;
-      return ch.latest.at > (ch.seen || 0);
+      return ch.latest.at > Math.max(ch.seen || 0, ch.dotAt || 0);
+    },
+
+    /* Posted within the last few hours — a stronger fact than "new to you", and
+       the one worth giving a card of its own. It does not care whether the dot
+       has been cleared: something posted an hour ago is still something posted
+       an hour ago. */
+    isFresh(ch){
+      if (!ui.showFresh || !ch || !ch.latest || !ch.latest.at) return false;
+      return Date.now() - ch.latest.at < Math.max(1, ui.freshHours || 24) * 3600e3;
+    },
+
+    /* ── Clearing the dots ─────────────────────────────────────────────────────
+       Every channel added at once arrives with an upload newer than a `seen` it
+       has never had, so a freshly seeded board is forty dots saying nothing.
+       Clearing one stamps the acknowledgement, not the view: the board still
+       says you have never opened it, because you have not.
+
+       Returns how many were cleared, which is what the button says. */
+    countNew(){ return channels.filter(ch => this.isNew(ch)).length },
+
+    clearNew(id){
+      const now = Date.now();
+      let n = 0;
+      channels.forEach(ch => {
+        if (id && ch.id !== id) return;
+        if (!ch.latest || !ch.latest.at) return;
+        if (ch.latest.at <= Math.max(ch.seen || 0, ch.dotAt || 0)) return;
+        ch.dotAt = now; n++;
+      });
+      if (n) saveCh();
+      return n;
     },
 
     /* ── The queue ─────────────────────────────────────────────────────────
@@ -241,8 +273,27 @@ const Store = (() => {
       if (patch.name  !== undefined) c.name  = patch.name.trim() || c.name;
       if (patch.color !== undefined) c.color = patch.color;
       if (patch.icon  !== undefined) c.icon  = patch.icon || '';
+      if (patch.fav   !== undefined) c.fav   = !!patch.fav;
       saveCat();
       return c;
+    },
+
+    /* A favourite is pinned to the front of every list you pick a category
+       from — the chips, the quick menu, the filing bar — without moving in the
+       manager, where the order is yours to set by hand. */
+    toggleFav(id){
+      const c = cats.find(x => x.id === id);
+      if (!c) return false;
+      c.fav = !c.fav; saveCat();
+      return c.fav;
+    },
+
+    /* Ordered for picking: favourites first, each group in the manager's own
+       order. `favFirst` off hands back exactly what the manager shows. */
+    pickCats(){
+      const list = cats.slice();
+      if (!ui.favFirst) return list;
+      return list.sort((a, b) => (b.fav ? 1 : 0) - (a.fav ? 1 : 0));
     },
 
     /* Reorder by one place. Buttons rather than dragging: the list is five or

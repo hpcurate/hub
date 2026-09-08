@@ -186,12 +186,49 @@ kbd{
 
 .card-hit{position:absolute;inset:0;z-index:1}
 .card > *:not(.card-hit){position:relative;z-index:2;pointer-events:none}
-.card-edit{pointer-events:auto}
+/* The three controls take pointer events back off the link underneath: the
+   edit button, the tag that files the channel, and the dot that clears itself. */
+.card-edit,.card .tag,.card .new{pointer-events:auto}
 
-/* The name lines up with the middle of the picture by default — a 17px name
-   sitting on the top edge of a 30px circle reads as a mistake. */
-.card-top{display:flex;align-items:center;gap:8px}
-.grid[data-name-align="top"] .card-top{align-items:flex-start}
+/* ── The six zones ───────────────────────────────────────────────────────────
+   Three rows, two zones to a row, and every part of a card sits in one of them.
+   The left zone takes the room and the right one takes what it needs, which is
+   what keeps a badge pinned to the right edge without anything being told to
+   pin itself there.
+
+   A row with nothing in it is not there: parts that are switched off are
+   detached rather than hidden, so `:has` is the honest test and there is no
+   empty gap where the description used to be. */
+/* Zones stretch to the height of their row. That is what gives a zone's own
+   direction something to say in the middle row, which is the tall one: `row`
+   centres the description in the space it has, `top` hangs it from the name. */
+.zrow{display:flex;align-items:stretch;gap:8px;min-width:0}
+.zrow[data-r="m"]{flex:1 1 auto}
+.zrow:not(:has(> .zone > *)){display:none}
+.zone{display:flex;gap:8px;min-width:0}
+.zone[data-z$="l"]{flex:1 1 auto}
+.zone[data-z$="r"]{flex:0 0 auto;margin-left:auto}
+/* Which way a zone runs is the card editor's one structural dial. `row` is side
+   by side on a common centre line, `top` is the same row hung from the top, and
+   `column` stacks — which is how the avatar gets above the name rather than
+   beside it. */
+.zone{flex-direction:row;align-items:center}
+.grid[data-zone-tl="top"] .zone[data-z="tl"],
+.grid[data-zone-tr="top"] .zone[data-z="tr"],
+.grid[data-zone-ml="top"] .zone[data-z="ml"],
+.grid[data-zone-mr="top"] .zone[data-z="mr"],
+.grid[data-zone-bl="top"] .zone[data-z="bl"],
+.grid[data-zone-br="top"] .zone[data-z="br"]{align-items:flex-start}
+.grid[data-zone-tl="column"] .zone[data-z="tl"],
+.grid[data-zone-tr="column"] .zone[data-z="tr"],
+.grid[data-zone-ml="column"] .zone[data-z="ml"],
+.grid[data-zone-mr="column"] .zone[data-z="mr"],
+.grid[data-zone-bl="column"] .zone[data-z="bl"],
+.grid[data-zone-br="column"] .zone[data-z="br"]{flex-direction:column;align-items:flex-start}
+/* A zone stacked on the right still hangs off the right edge of its row. */
+.grid[data-zone-tr="column"] .zone[data-z="tr"],
+.grid[data-zone-mr="column"] .zone[data-z="mr"],
+.grid[data-zone-br="column"] .zone[data-z="br"]{align-items:flex-end}
 /* ── The name ────────────────────────────────────────────────────────────────
    It wraps to as many lines as the Lines setting allows, and it must not be cut
    while doing it. Two things were doing the cutting: a line box tighter than
@@ -201,7 +238,7 @@ kbd{
    needs. `min-height` keeps a one-line name from making a shorter card than its
    neighbours. */
 .card-name{
-  margin:0;flex:1;min-width:0;
+  margin:0;flex:1 1 auto;min-width:0;
   font:600 var(--name-px,17px)/1.32 var(--head);letter-spacing:-.01em;
   overflow-wrap:anywhere;hyphens:auto;
   display:-webkit-box;-webkit-box-orient:vertical;
@@ -221,13 +258,12 @@ kbd{
 .card-edit:hover{background:var(--s2);color:var(--tx)}
 
 .card-desc{
-  margin:0;flex:1;
+  margin:0;flex:1 1 auto;
   font-size:var(--desc-px,12.5px);line-height:1.5;color:var(--tx-2);
   display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:4;overflow:hidden;
 }
 .card-desc.none{color:var(--mu)}
 
-.card-foot{display:flex;align-items:center;gap:8px;padding-top:2px}
 .tag{
   display:inline-flex;align-items:center;gap:6px;
   font:500 10px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;
@@ -608,30 +644,81 @@ input[type="range"]::-moz-range-thumb{
   box-shadow:0 0 0 1px color-mix(in srgb,var(--c) 30%,transparent);
 }
 
-/* Something new since you last looked. A dot, not a badge: it is a yes/no. */
 /* ── The new dot ─────────────────────────────────────────────────────────────
-   Three places it can sit, its own size and its own colour. In the name it is
-   part of the line; in the corner and on the avatar it is placed against the
-   card, which is why the card is a containing block. */
+   Something new since you last looked. A dot, not a badge: it is a yes/no. It
+   sits in whichever zone the card editor put it in, at its own size and its own
+   colour — or pinned to the corner of the avatar, which is the one place on a
+   card that is not a zone.
+
+   It is a button, because it is the control for the thing it means: clicking it
+   clears this one card's dot the way the bar's button clears all of them. */
 .card .new{
-  display:none;flex:0 0 auto;
+  flex:0 0 auto;padding:0;
   width:var(--dot-size,7px);height:var(--dot-size,7px);
-  margin-top:calc((1.32em - var(--dot-size,7px)) / 2);
   border-radius:var(--r-pill);background:var(--dot-c,var(--y));
+  transition:transform var(--dur-1) var(--ease-out),box-shadow var(--dur-1) var(--ease);
 }
-.grid[data-dot="corner"] .card .new{position:absolute;top:9px;right:9px;margin:0;z-index:3}
-.grid[data-dot="avatar"] .card .new{
+.card .new:hover{
+  transform:scale(1.5);
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--dot-c,var(--y)) 24%,transparent);
+}
+.grid[data-dot="avatar"] .card:has(.av.has) .new{
   position:absolute;margin:0;z-index:3;
   top:calc(14px + var(--av-size,30px) - var(--dot-size,7px));
   left:calc(15px + var(--av-size,30px) - var(--dot-size,7px));
   box-shadow:0 0 0 2px var(--s1);
 }
-.grid[data-dot="avatar"] .card:not(:has(.av.has)) .new{position:static;box-shadow:none}
-.card.is-new .new{display:block}
 .grid.no-new .card .new{display:none}
 .card.is-new{border-color:color-mix(in srgb,var(--y) 26%,var(--bd))}
 
+/* ── Posted today ────────────────────────────────────────────────────────────
+   A dot says "there is something you have not seen". This says "there is
+   something from this morning", which is a different fact and the one that
+   decides what to open now — so it is the whole card that answers, not a mark
+   on it.
+
+   Three things, all of them the accent already on the card: the edge lifts, a
+   soft glow sits under it, and the colour spine runs a slow sheen down its
+   length. The spine is the animated part because it is 3px wide — a card that
+   pulses is a card that shouts, and there are forty of them. */
+@keyframes spine-run{
+  0%{background-position:0 -140%}
+  100%{background-position:0 240%}
+}
+.card.is-fresh{
+  border-color:color-mix(in srgb,var(--dot-c,var(--y)) 46%,var(--bd));
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--dot-c,var(--y)) 12%,transparent),
+             0 4px 22px -10px color-mix(in srgb,var(--dot-c,var(--y)) 55%,transparent);
+}
+.card.is-fresh::before{
+  width:3px;opacity:1;
+  background:linear-gradient(180deg,
+    var(--c) 0%,
+    color-mix(in srgb,var(--dot-c,var(--y)) 85%,#fff) 45%,
+    var(--c) 90%);
+  background-size:100% 220%;
+  animation:spine-run calc(3.4s / max(var(--mo),.001)) var(--ease) infinite;
+}
+.card.is-fresh::after{opacity:.7}
+.card.is-fresh:hover{
+  border-color:color-mix(in srgb,var(--dot-c,var(--y)) 70%,var(--bd));
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--dot-c,var(--y)) 18%,transparent),
+             0 8px 26px -10px color-mix(in srgb,var(--dot-c,var(--y)) 65%,transparent);
+}
+/* The name of a card with something posted today is the accent's own colour —
+   the one place the fresh state touches the type, and the reason the card reads
+   as new rather than merely decorated. */
+.card.is-fresh .card-name{color:color-mix(in srgb,var(--dot-c,var(--y)) 72%,var(--tx))}
+.grid.no-fresh .card.is-fresh{border-color:var(--bd);box-shadow:none}
+.grid.no-fresh .card.is-fresh::before{background:var(--c);animation:none}
+.grid.no-fresh .card.is-fresh .card-name{color:inherit}
+@media (prefers-reduced-motion: reduce){
+  .card.is-fresh::before{animation:none}
+}
+
 .card-desc{-webkit-line-clamp:var(--desc-lines,4)}
+/* A part that is off is detached rather than hidden — see place() — so these
+   are belt and braces for a card painted before the setting reached it. */
 .grid.no-desc .card .card-desc{display:none}
 .grid.no-tag .card .tag{display:none}
 .grid.no-seen .card .seen{display:none}
@@ -666,8 +753,10 @@ input[type="range"]::-moz-range-thumb{
 }
 .set-r.on b{background:var(--yd);border-color:var(--y)}
 .set-r.on b::after{background:var(--y);transform:translateX(13px)}
-.set-range{display:flex;align-items:center;gap:10px;flex:0 0 210px}
-.set-range output{
+/* The slider and its readout. Named `set-slide` and not `set-range`, which is
+   what the row itself is called — see the comment where it is built. */
+.set-slide{display:flex;align-items:center;gap:10px;flex:0 0 210px}
+.set-slide output{
   flex:0 0 auto;min-width:66px;text-align:right;
   font:500 11px/1 var(--mono);letter-spacing:.06em;color:var(--tx)}
 .set-heat .heat-pick{flex:0 0 220px}
@@ -713,30 +802,24 @@ input[type="range"]::-moz-range-thumb{
 .grid.no-counts .card .b-count{display:none}
 .grid.no-seen .card .b-seen{display:none}
 
-/* Badges above the card's own body rather than under it. The foot is the last
-   child, so moving it is one order. */
-.grid[data-badges="top"] .card .card-foot{order:-1;padding-top:0;padding-bottom:2px}
-
 /* ── Card shapes ─────────────────────────────────────────────────────────── */
 .grid[data-layout="compact"] .card{min-height:0;padding:10px 12px;gap:6px}
 .grid[data-layout="compact"] .card-name{font-size:15px}
 
-/* One column, and the card turns on its side: avatar, then name and badges in
-   a row. A board of ninety is a list, not a grid. */
+/* One column, and the card turns on its side: the three zone rows sit beside
+   each other instead of above. A board of ninety is a list, not a grid. */
 .grid[data-layout="list"]{grid-template-columns:1fr}
 .grid[data-layout="list"] .card{
   min-height:0;padding:9px 12px;gap:10px;
   flex-direction:row;align-items:center;
 }
-.grid[data-layout="list"] .card-top{flex:0 1 auto;min-width:0;max-width:46%}
+.grid[data-layout="list"] .zrow{align-items:center}
+.grid[data-layout="list"] .zrow[data-r="t"]{flex:0 1 auto;max-width:46%}
+.grid[data-layout="list"] .zrow[data-r="b"]{margin-left:auto;flex:0 0 auto}
 .grid[data-layout="list"] .card-name{font-size:14.5px;-webkit-line-clamp:1}
-.grid[data-layout="list"] .card-desc{flex:1;-webkit-line-clamp:1;margin:0}
-.grid[data-layout="list"] .card-foot{margin-left:auto;padding-top:0;order:0}
+.grid[data-layout="list"] .card-desc{-webkit-line-clamp:1;margin:0}
 .grid[data-layout="list"] .heat{height:2px}
 
-/* Avatar above the name instead of beside it. */
-.grid[data-avatar-pos="top"] .card-top{flex-direction:column;align-items:flex-start;gap:8px}
-.grid[data-avatar-pos="top"] .card .new{position:absolute;top:14px;right:14px;margin:0}
 .card .av{width:var(--av-size,30px);height:var(--av-size,30px)}
 
 /* ── Edge and ground ─────────────────────────────────────────────────────── */
@@ -772,21 +855,116 @@ html.cat-mode .card .card-edit{display:none}
 .set-preset{align-items:flex-start}
 
 /* ── Opens as a number ───────────────────────────────────────────────────────
-   Not a restyled badge: a different thing to read. It sits in the bottom-right
-   corner of the card at the name's own size and weight, so a board sorted by
-   most-clicked can be read down the numbers alone. */
+   Not a restyled badge: a different thing to read. It is the name's own size and
+   weight, so a board sorted by most-clicked can be read down the numbers alone.
+   Since the card editor it is a part in a zone like any other, which is how it
+   ends up bottom right by default rather than by being nailed there. */
 .card .card-n{
-  position:absolute;right:13px;bottom:10px;z-index:2;pointer-events:none;
+  flex:0 0 auto;
   font:600 var(--name-px,17px)/1 var(--head);letter-spacing:-.02em;
   color:var(--tx-2);
   font-variant-numeric:tabular-nums;
 }
-.grid[data-count="number"] .card .card-foot{padding-right:calc(var(--name-px,17px) * 2.2)}
-.grid[data-layout="list"] .card .card-n{position:static;margin-left:10px}
-.grid[data-layout="list"][data-count="number"] .card .card-foot{padding-right:0}
 
 /* A colour control that is allowed to mean "the accent". */
 .col-wrap{display:flex;align-items:center;gap:8px}
 
 /* The wordmark takes its size from settings now. */
 .h-logo{font-size:var(--title-px,54px)}
+
+/* ── The card editor ─────────────────────────────────────────────────────────
+   A card on a stage, and under it the two controls that only exist here: a map
+   of the card for where a part goes, and the same map again for which way each
+   zone runs. Both are drawn in the shape of the thing they edit — six cells,
+   two to a row — because a picture of a card is the shortest way to say "there,
+   that corner" and a dropdown reading "top-left" is the longest. */
+.card-stage{
+  padding:16px;margin:2px 0 6px;
+  background:var(--bg);border:var(--bw) dashed var(--bd-2);border-radius:var(--r2);
+}
+/* The card on the stage is a real one, with the board's own handlers on it. It
+   is there to be looked at, not clicked: the controls are underneath. */
+.card-stage .grid{pointer-events:none;grid-template-columns:1fr}
+.card-stage .card{min-height:118px}
+
+/* Six cells in the shape of a card. On the part rows they are targets; in the
+   zones block each holds its own little segmented control instead. */
+.zone-map{
+  flex:0 0 auto;display:grid;gap:3px;
+  grid-template-columns:repeat(2,22px);grid-template-rows:repeat(3,14px);
+}
+.zc{
+  border-radius:2px;background:var(--s2);border:var(--bw) solid var(--bd);
+  transition:background var(--dur-1) var(--ease),border-color var(--dur-1) var(--ease),
+             transform var(--dur-1) var(--ease-out);
+}
+.zc:hover{border-color:var(--bd-2);background:var(--s3)}
+.zc.on{background:var(--y);border-color:var(--y)}
+
+/* The switch on a part row: the same pill as a settings toggle, at the size of
+   a control that sits beside a six-cell map rather than filling a row. */
+.part-sw{
+  flex:0 0 auto;display:flex;align-items:center;
+}
+.part-sw b{
+  position:relative;display:block;width:30px;height:17px;border-radius:var(--r-pill);
+  background:var(--s2);border:var(--bw) solid var(--bd-2);
+  transition:background var(--dur-1) var(--ease),border-color var(--dur-1) var(--ease);
+}
+.part-sw b::after{
+  content:'';position:absolute;top:2px;left:2px;width:11px;height:11px;
+  border-radius:var(--r-pill);background:var(--mu);
+  transition:transform var(--dur-1) var(--ease-out),background var(--dur-1) var(--ease);
+}
+.part-sw.on b{background:var(--yd);border-color:var(--y)}
+.part-sw.on b::after{background:var(--y);transform:translateX(13px)}
+/* A part with no switch — the name, the edit button — still lines its map up
+   with the ones that have one. */
+.set-part .zone-map{margin-left:auto}
+
+/* The zones block is a row that gave up being a row: six cells is too much to
+   put beside a label. */
+.set-r.as-block{flex-direction:column;align-items:stretch}
+.zone-grid{
+  display:grid;gap:6px;grid-template-columns:repeat(2,1fr);margin-top:4px;
+}
+.zg{
+  display:flex;align-items:center;gap:8px;padding:6px 8px;
+  background:var(--s1);border:var(--bw) solid var(--bd);border-radius:var(--r1);
+}
+.zg-k{
+  flex:1;min-width:0;
+  font:500 9.5px/1.3 var(--mono);letter-spacing:.12em;text-transform:uppercase;
+  color:var(--tx-2);
+}
+.zg .seg-b{width:24px;height:22px;font-size:12px;line-height:1}
+
+/* ── The favourite star ──────────────────────────────────────────────────────
+   First in the category row, because it is the only control there that changes
+   where the category turns up rather than what it looks like. */
+.cat-fav{
+  flex:0 0 auto;width:24px;height:24px;border-radius:var(--r1);
+  color:var(--mu);font-size:14px;line-height:1;
+  transition:background var(--dur-1) var(--ease),color var(--dur-1) var(--ease),
+             transform var(--dur-1) var(--ease-out);
+}
+.cat-fav:hover{background:var(--s2);color:var(--tx-2);transform:scale(1.08)}
+.cat-fav.on{color:var(--y)}
+.cat-fav.on:hover{color:var(--y)}
+
+/* A favourite on the filter bar: the accent's own hairline, and a star before
+   the dot. Pinned to the front by the renderer, marked here. */
+.chip.fav::after{
+  content:'\2605';margin-left:1px;font-size:9px;line-height:1;color:var(--y);opacity:.75;
+}
+.chip.fav{border-color:color-mix(in srgb,var(--y) 22%,var(--bd))}
+
+/* ── Clear the dots ──────────────────────────────────────────────────────────
+   On the bar only while there is something to clear, and two-step like every
+   other clearing button on the board. */
+.btn-dots{color:var(--tx-2)}
+.btn-dots .btn-n{background:var(--yd);color:var(--y);font-weight:700}
+.btn-dots:hover{color:var(--tx);border-color:var(--yb)}
+.btn-dots.armed{background:var(--y);border-color:var(--y);color:var(--on-y);font-weight:700}
+.btn-dots.armed::after{content:' — sure?';letter-spacing:.04em}
+.btn-dots.armed .btn-n{background:var(--on-y);color:var(--y)}
