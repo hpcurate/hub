@@ -326,6 +326,14 @@ const HubModel = (() => {
     sheetAnimation:'scale', sheetSpeed:.26,
     avatarSpeed:.8, dotSpeed:2, refreshSpeed:1.4,
     previewSpeed:.24, previewDismissSpeed:.22, previewCueSpeed:2,
+    /* How long the card takes to grow when a hover preview opens. Its own dial
+       rather than the reveal's, because they are two different movements: the
+       reveal is the panel's contents arriving, this is the card getting
+       bigger. Until 0.19 the card did not grow at all — it reserved the height
+       whether or not the preview was showing, and the panel appeared by
+       switching `display`, which nothing can animate. That is what "nothing
+       seems to affect that specific animation speed" was. */
+    previewGrowSpeed:.26,
     washAnimationSpeed:12, pageBgSpeed:46, interfaceSpeed:.2, resizeSpeed:.28,
     washScale:100, washX:50, washY:50, washOverlay:'none', washOverlayOpacity:20,
     latestPreview:true, previewMode:'hover', previewThumbnail:true, previewActions:true,
@@ -412,7 +420,7 @@ const HubModel = (() => {
     'previewTitle','previewAge','previewThumbSize','previewOnlyFresh','previewHideButton','previewAnimation',
     'previewLabel','previewCue','previewCueAnimation','previewDismissAnimation',
     'cardEnter','enterStagger','enterSpeed','enterEasing','cardExit','exitSpeed','reorderSpeed','reorderEasing','filterAnimation','filterSpeed','sheetAnimation','sheetSpeed',
-    'avatarSpeed','dotSpeed','refreshSpeed','previewSpeed','previewDismissSpeed','previewCueSpeed','washAnimationSpeed','pageBgSpeed','interfaceSpeed','resizeSpeed',
+    'avatarSpeed','dotSpeed','refreshSpeed','previewSpeed','previewDismissSpeed','previewCueSpeed','previewGrowSpeed','washAnimationSpeed','pageBgSpeed','interfaceSpeed','resizeSpeed',
     'pageBg','pageBgColor','pageBgStrength','pageBgScale','pageBgAngle','pageBgAnimate'];
   const pickLook = ui => Object.fromEntries(LOOK_KEYS.map(k => [k, ui[k]]));
   const BUILTIN_LOOKS = [
@@ -670,6 +678,7 @@ const HubModel = (() => {
       animationStagger:[0,1500], enterStagger:[0,300], enterSpeed:[0,4], exitSpeed:[0,4],
       reorderSpeed:[0,4], filterSpeed:[0,4], sheetSpeed:[0,4], avatarSpeed:[.1,10], dotSpeed:[.1,10],
       refreshSpeed:[.1,10], previewSpeed:[0,4], previewDismissSpeed:[0,4], previewCueSpeed:[.1,10],
+      previewGrowSpeed:[0,2],
       washAnimationSpeed:[.1,120], pageBgSpeed:[1,300], interfaceSpeed:[0,4], resizeSpeed:[0,4],
       cardWidth:[180,520], cardHeight:[88,360], cardRadius:[0,40],
       uiScale:[0.8,1.5], uiDensity:[0.8,1.4] }).forEach(([k, [min,max]]) => {

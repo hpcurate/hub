@@ -878,6 +878,42 @@ console.log('\nthe dot, the avatar and the fresh card');
 click($('#sheet-card [data-close]'));
 await tick();
 
+
+console.log('\nthe card that grows for a new video');
+{
+  const css019 = fs.readFileSync(path.join(APP, 'css/hub.css'), 'utf8');
+  /* 0.19 — a card in `hover` mode reserved the tall box whether or not the
+     preview was showing, and the preview arrived by switching `display`, which
+     nothing can animate. Both of those are one change. */
+  ok('the tall box is reserved only where the panel is always there',
+    /\[data-video-preview="always"\]:has\(\.video-panel:not\(\[hidden\]\)\)\{min-height:220px\}/.test(css019) &&
+    /\.card:has\(\.video-panel:not\(\[hidden\]\)\)\{min-height:var\(--card-height/.test(css019));
+  ok('a hover preview grows the card by exactly its own height',
+    /\.card\[data-video-preview="hover"\]:is\(:hover,:focus-within,\.preview-open\) \.video-detail\{[\s\S]{0,80}?height:100%/.test(css019));
+  ok('… and it is drawn over the row below, so the grid is never re-laid',
+    /\.card\[data-video-preview="hover"\] \.video-detail\{[\s\S]{0,240}?position:absolute/.test(css019) &&
+    /:is\(:hover,:focus-within,\.preview-open\)\{\s*overflow:visible;z-index:30\}/.test(css019));
+  ok('… growing by height rather than by display, which is what makes it animatable',
+    /\.card\[data-video-preview="hover"\] \.video-detail\{[\s\S]{0,700}?transition:height calc\(var\(--preview-grow/.test(css019) &&
+    /\.card\[data-video-preview="hover"\] \.video-detail\{[\s\S]{0,240}?height:0/.test(css019));
+  ok('un-clipping the card cannot leak its layers, because they take its radius',
+    /\.card \.wash,\.card \.ground,\.card \.logo-overlay,\.card::after\{border-radius:inherit\}/.test(css019));
+
+  click($('#btn-set'));
+  await tick();
+  const grow = $('#s-previewGrowSpeed');
+  ok('the growth has a slider of its own', !!grow, grow ? 'found' : 'no slider');
+  if (grow) {
+    set(grow, '0.8');
+    await tick();
+    const v = [...d.querySelectorAll('.grid')]
+      .map(g => g.style.getPropertyValue('--preview-grow').trim()).find(Boolean);
+    ok('… and moving it reaches the board', v === '0.8s', v || 'nothing written');
+    set(grow, '0.26');
+    await tick();
+  }
+}
+
 console.log('\nthe type sizes');
 click($('#btn-set'));
 await tick();

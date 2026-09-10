@@ -584,6 +584,7 @@ function paintEffects(el,ch){
   el.style.setProperty('--preview-cycle',look.previewSpeed+'s');
   el.style.setProperty('--preview-dismiss-cycle',look.previewDismissSpeed+'s');
   el.style.setProperty('--preview-cue-cycle',look.previewCueSpeed+'s');
+  el.style.setProperty('--preview-grow',look.previewGrowSpeed+'s');
   el.style.setProperty('--fresh-loops',look.freshLoops ? String(look.freshLoops) : 'infinite');
   el.style.setProperty('--overlay-c',sourceColor(look.washOverlayColor,look.washOverlayCustom));
   el.style.setProperty('--tint-c',sourceColor(look.cardTint === 'none' ? 'accent' : look.cardTint,look.cardTintColor));
@@ -1862,6 +1863,9 @@ CARD_SETTINGS.push(
     {k:'previewSpeed',t:'range',label:'video preview reveal speed',min:0,max:4,step:.02,fmt:v=>+v<=0?'instant':(+v).toFixed(2)+'s'},
     {k:'previewDismissAnimation',t:'seg',label:'video preview dismissal',opts:['none','fade','shrink','slide','blur','fold','fly','drop','implode','spin']},
     {k:'previewDismissSpeed',t:'range',label:'video preview dismissal speed',min:0,max:4,step:.02,fmt:v=>+v<=0?'instant':(+v).toFixed(2)+'s'},
+    {k:'previewGrowSpeed',t:'range',label:'card growth on hover',min:0,max:2,step:.02,
+     note:'how long the card takes to double when a hover preview opens',
+     fmt:v=>+v<=0?'instant':(+v).toFixed(2)+'s'},
     {k:'sheetAnimation',t:'seg',label:'settings panel',opts:['none','scale','slide','fade','blur','drop']},
     {k:'sheetSpeed',t:'range',label:'settings panel speed',min:0,max:4,step:.02,fmt:v=>+v<=0?'instant':(+v).toFixed(2)+'s'},
     {k:'pageBgAnimate',t:'toggle',label:'animate the page background'},
@@ -2119,6 +2123,7 @@ function applyGridLook(g,ui){
     '--avatar-cycle':ui.avatarSpeed+'s','--dot-cycle':ui.dotSpeed+'s','--refresh-cycle':ui.refreshSpeed+'s',
     '--preview-cycle':ui.previewSpeed+'s','--preview-dismiss-cycle':ui.previewDismissSpeed+'s',
     '--preview-cue-cycle':ui.previewCueSpeed+'s','--resize-cycle':ui.resizeSpeed+'s',
+    '--preview-grow':ui.previewGrowSpeed+'s',
     '--card-width':ui.cardWidth+'px','--card-height':ui.cardHeight+'px','--card-radius':ui.cardRadius+'px'};
   Object.entries(vars).forEach(([k,v])=>g.style.setProperty(k,v));
 }

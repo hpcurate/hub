@@ -2231,3 +2231,58 @@ kbd{font-size:calc(10px * var(--ui,1))}
 .sh-s{font-size:calc(12px * var(--ui,1))}
 .row-s{font-size:calc(11.5px * var(--ui,1))}
 .tog em{font-size:calc(11px * var(--ui,1))}
+
+
+/* ── The card that grows for a new video ─────────────────────────────────────
+   Until 0.19 a card holding a video panel reserved the taller box whether or
+   not the preview was showing — so in `hover` mode, where the preview is hidden
+   most of the time, every such card was permanently tall for content nobody was
+   looking at. And the preview arrived by switching `display`, which is the one
+   property nothing can animate, so the card jumped and no speed dial could
+   reach it. Both of those are this block.
+
+   The card now keeps its ordinary height at rest and **doubles** it on hover.
+   The half it grows by is drawn *over* the cards below rather than pushed into
+   the grid: a grid item that grows makes its whole row grow, every neighbour in
+   that row stretches with it, and everything below shifts down — which is the
+   gap-and-shuffle this was asked to stop. Absolutely positioned, the card's own
+   box never changes, so the grid is never re-laid at all.
+
+   `--preview-grow` is the dial. Height and padding are transitioned rather than
+   `display`, which is what makes there be an animation for it to set. */
+
+/* The reservation belongs to `always` mode, where the panel really is always
+   there. In `hover` mode the card is its own size until it is hovered. */
+.grid:not(.manual-mode)[data-layout="card"]>.card:has(.video-panel:not([hidden])){min-height:var(--card-height,132px)}
+.grid:not(.manual-mode)[data-layout="card"]>.card[data-video-preview="always"]:has(.video-panel:not([hidden])){min-height:220px}
+
+.card[data-video-preview="hover"] .video-detail{
+  display:grid;
+  position:absolute;left:0;right:0;top:100%;
+  height:0;max-height:none;min-height:0;
+  padding:0 10px;opacity:0;overflow:hidden;pointer-events:none;
+  margin:0;border-width:0 var(--bw) var(--bw);
+  border-radius:0 0 var(--card-radius,var(--r2)) var(--card-radius,var(--r2));
+  z-index:6;
+  transition:height calc(var(--preview-grow,.26s) * var(--mo)) var(--ease),
+             padding calc(var(--preview-grow,.26s) * var(--mo)) var(--ease),
+             opacity calc(var(--preview-grow,.26s) * var(--mo)) var(--ease)}
+/* 100% of the card is exactly one more card — "doubles its height". */
+.card[data-video-preview="hover"]:is(:hover,:focus-within,.preview-open) .video-detail{
+  height:100%;padding:10px;opacity:1;overflow:auto;pointer-events:auto}
+
+/* Letting it out, and only for a card that actually has one. The layers inside
+   a card are all `inset:0` rectangles, so un-clipping cannot leak any of them —
+   but they take the card's radius explicitly here, because without the clip
+   their square corners would show at the rounded ones. */
+.card[data-video-preview="hover"]:has(.video-panel:not([hidden])):is(:hover,:focus-within,.preview-open){
+  overflow:visible;z-index:30}
+.card .wash,.card .ground,.card .logo-overlay,.card::after{border-radius:inherit}
+
+/* The grown half sits over the row below, so it needs its own ground rather
+   than the transparency it had while it was inside the card. */
+.card[data-video-preview="hover"] .video-detail{background:var(--s1)}
+
+@media (prefers-reduced-motion:reduce){
+  .card[data-video-preview="hover"] .video-detail{transition:none}
+}

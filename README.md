@@ -103,6 +103,16 @@ motion tokens, Grotesk for titles and JetBrains Mono for everything else.
   radius, motion, content width, the heat and its steps, every badge, and — in
   the extension — how often a feed is checked, how long an avatar is trusted, and
   how many channels are asked about at once.
+- **The card grows for a new video** — in `hover` mode a card holding a preview
+  used to reserve the taller box whether or not the preview was showing, so it
+  was permanently tall for content nobody was looking at. It is now its own size
+  at rest and **doubles** on hover. The half it grows by is drawn over the row
+  beneath rather than pushed into the grid: a grid item that grows makes its
+  whole row grow and shunts everything below it, and the card's own box never
+  changing is what keeps the board still. **Card growth on hover** sets how long
+  it takes — its own dial, because until 0.19 the preview arrived by switching
+  `display`, which nothing can animate, and that is why no speed setting reached
+  it.
 - **Text size and spacing** — two dials over the *whole* app, not just the
   cards. The board always answered the window; until 0.18 the header, the control
   bar, the chips and the sheets around it answered nothing, and every size in
