@@ -15,7 +15,15 @@ const Store = (() => {
 
   const { KEYS, PALETTE, DEFAULT_UI, uid,
           normUrl, nameFromUrl, makeChannel, makeQueued, fillChannel, fillCat, fillUi, seedCats,
+          seedAllCats, PLATFORM_KEYS, isPlatform, platformOf,
           buildExport, readExport } = HubModel;
+
+  /* Which board is showing. Everything that means "on this tab" reads it from
+     here rather than taking it as an argument, because there is exactly one
+     answer at a time and threading it through forty call sites would be a
+     parameter that is never anything but `ui.tab`. */
+  const tab = () => ui.tab;
+  const here = c => c.platform === ui.tab;
 
   /* chrome.storage.local, or nothing. `chrome` exists in places that cannot
      store anything, so the capability is what gets tested, not the namespace. */
@@ -108,7 +116,9 @@ const Store = (() => {
       }
     }
 
-    if (seed){ cats = seedCats(); saveCat() }
+    /* Both boards' categories, not just this one's: an Instagram tab whose
+       filter bar is empty on a first run reads as broken rather than as new. */
+    if (seed){ cats = seedAllCats(); saveCat() }
   })();
 
   /* Somebody else wrote — the "+ add" button, or the board in another tab.
@@ -140,22 +150,43 @@ const Store = (() => {
       const d = readExport(text);
       if (!d) return null;
       channels = d.channels;
-      cats = d.cats.length ? d.cats : seedCats();
+      cats = d.cats.length ? d.cats : seedAllCats();
+      /* An export written before there were two boards carries YouTube
+         categories and nothing else. Topping up the empty board rather than
+         leaving it bare is the same argument as seeding one: no categories at
+         all is indistinguishable from something having gone wrong. */
+      PLATFORM_KEYS.forEach(pl => {
+        if (!cats.some(c => c.platform === pl)) cats = cats.concat(seedCats(pl));
+      });
       ui = d.ui;
       queue = d.queue;
       saveCh(); saveCat(); saveUi(); saveQ();
       return { channels:channels.length, cats:cats.length, queue:queue.length };
     },
 
-    /* ── Reads ─────────────────────────────────────────────────────────── */
+    /* ── Reads ─────────────────────────────────────────────────────────────
+       `channels` and `allCats` are both boards; everything else is the one
+       showing. The split is deliberate: a lookup by id has to see every record
+       whichever tab is open, and everything a person *reads* — the chips, the
+       counts, the heat scale — is about the board in front of them. */
     channels: () => channels.slice(),
-    cats:     () => cats.slice(),
+    onTab:    () => channels.filter(here),
+    allCats:  () => cats.slice(),
+    cats:     () => cats.filter(here),
     cat:      id => cats.find(c => c.id === id) || null,
+    tab,
+    /* Switching boards is a setting like any other, so it is saved, restored
+       and carried in an export: HUB reopens on the tab you left it on. */
+    setTab(next){ if (isPlatform(next) && next !== ui.tab){ ui = fillUi({ ...ui, tab:next }); saveUi() } return ui.tab },
+    platformOf,
     countIn:  id => channels.filter(c => c.cat === id).length,
-    maxClicks: () => channels.reduce((m, c) => Math.max(m, c.clicks || 0), 0),
+    /* The heat scale runs from the least- to the most-opened channel *on this
+       board*. Spanning both would rank a channel against accounts it has
+       nothing to do with, and one busy tab would flatten the other. */
+    maxClicks: () => channels.filter(here).reduce((m, c) => Math.max(m, c.clicks || 0), 0),
     nameFromUrl, normUrl,
 
-    ui:    () => ({ ...ui, slots:{ ...ui.slots }, zones:{ ...ui.zones } }),
+    ui:    () => JSON.parse(JSON.stringify(ui)),
     setUi(patch){ ui = fillUi({ ...ui, ...patch }); saveUi(); return this.ui() },
 
     /* ── Channels ──────────────────────────────────────────────────────── */
@@ -173,6 +204,8 @@ const Store = (() => {
       if (patch.desc !== undefined) ch.desc = patch.desc.trim();
       if (patch.cat  !== undefined) ch.cat  = patch.cat;
       if (patch.pin  !== undefined) ch.pin  = !!patch.pin;
+      if (patch.hidePreview !== undefined) ch.hidePreview = !!patch.hidePreview;
+      if (patch.previewDismissed !== undefined) ch.previewDismissed = String(patch.previewDismissed || '');
       saveCh();
       return ch;
     },
@@ -188,7 +221,30 @@ const Store = (() => {
       return ch.pin;
     },
 
-    pinned: () => channels.filter(c => c.pin).length,
+    pinned: () => channels.filter(c => c.pin && here(c)).length,
+
+    /* The latest-video box, off for this one channel. Like a pin, it is a thing
+       done to a channel that exists rather than a field being typed, so it
+       writes through immediately. */
+    togglePreview(id){
+      const ch = channels.find(c => c.id === id);
+      if (!ch) return false;
+      ch.hidePreview = !ch.hidePreview; saveCh();
+      return ch.hidePreview;
+    },
+
+    dismissPreview(id, key){
+      const ch = channels.find(c => c.id === id);
+      if (!ch) return false;
+      ch.previewDismissed = String(key || '');
+      saveCh();
+      return true;
+    },
+
+    markAnimation(id, key){
+      const ch = channels.find(c=>c.id === id);
+      if (ch){ch.animationSeen = key; saveCh()}
+    },
 
     removeChannel(id){ channels = channels.filter(c => c.id !== id); saveCh() },
 
@@ -204,6 +260,12 @@ const Store = (() => {
       if (info.latest) ch.latest = info.latest;
       if (info.checkedAt) ch.checkedAt = info.checkedAt;
       if (info.pageAt) ch.pageAt = info.pageAt;
+      /* The top of an Instagram grid, as of this look. An array rather than a
+         truthy scalar, so the test is "was one handed over" and not "is it
+         empty" — an account that has posted nothing has an empty grid, and that
+         is an answer worth recording. */
+      if (Array.isArray(info.igPosts)) ch.igPosts = info.igPosts.slice();
+      if (info.handle) ch.handle = info.handle;
       saveCh();
       return ch;
     },
@@ -212,7 +274,7 @@ const Store = (() => {
        time you opened it. No second piece of state: "new" is a comparison
        between two facts already on the record. */
     isNew(ch){
-      if (!ui.showNew || !ch || !ch.latest || !ch.latest.at) return false;
+      if (!ui.showNew || !ch || !ch.latest || !ch.latest.at || ch.latest.at > Date.now()) return false;
       return ch.latest.at > Math.max(ch.seen || 0, ch.dotAt || 0);
     },
 
@@ -222,7 +284,8 @@ const Store = (() => {
        an hour ago. */
     isFresh(ch){
       if (!ui.showFresh || !ch || !ch.latest || !ch.latest.at) return false;
-      return Date.now() - ch.latest.at < Math.max(1, ui.freshHours || 24) * 3600e3;
+      const age = Date.now() - ch.latest.at;
+      return age >= 0 && age < Math.max(1, ui.freshHours || 24) * 3600e3;
     },
 
     /* ── Clearing the dots ─────────────────────────────────────────────────────
@@ -232,14 +295,18 @@ const Store = (() => {
        says you have never opened it, because you have not.
 
        Returns how many were cleared, which is what the button says. */
-    countNew(){ return channels.filter(ch => this.isNew(ch)).length },
+    /* On this board. The chip, the button and the tab title all read it, and
+       all three of them are about what is in front of you; the other board
+       carries its own count on its own tab. */
+    countNew(){ return channels.filter(ch => here(ch) && this.isNew(ch)).length },
+    countNewOn(platform){ return channels.filter(ch => ch.platform === platform && this.isNew(ch)).length },
 
     clearNew(id){
       const now = Date.now();
       let n = 0;
       channels.forEach(ch => {
         if (id && ch.id !== id) return;
-        if (!ch.latest || !ch.latest.at) return;
+        if (!ch.latest || !ch.latest.at || ch.latest.at > now) return;
         if (ch.latest.at <= Math.max(ch.seen || 0, ch.dotAt || 0)) return;
         ch.dotAt = now; n++;
       });
@@ -274,9 +341,10 @@ const Store = (() => {
 
     /* ── Categories ────────────────────────────────────────────────────── */
     addCat(name, color, icon){
-      const c = { id:uid(), order:cats.length, icon: icon || '',
+      const mine = cats.filter(here);
+      const c = { id:uid(), order:mine.length, icon: icon || '', platform:tab(),
                   name:(name || '').trim() || 'untitled',
-                  color: color || PALETTE[cats.length % PALETTE.length] };
+                  color: color || PALETTE[mine.length % PALETTE.length] };
       cats.push(c); saveCat();
       return c;
     },
@@ -305,18 +373,23 @@ const Store = (() => {
     /* Ordered for picking: favourites first, each group in the manager's own
        order. `favFirst` off hands back exactly what the manager shows. */
     pickCats(){
-      const list = cats.slice();
+      const list = cats.filter(here);
       if (!ui.favFirst) return list;
       return list.sort((a, b) => (b.fav ? 1 : 0) - (a.fav ? 1 : 0));
     },
 
     /* Reorder by one place. Buttons rather than dragging: the list is five or
        six rows in a sheet, and a drag is a thing to get wrong on a trackpad. */
+    /* Within its own board. The two lists share one array, so moving by index
+       across the whole of it would have an Instagram category swap places with
+       a YouTube one and appear to vanish from both. */
     moveCat(id, dir){
-      const i = cats.findIndex(c => c.id === id);
+      const mine = cats.filter(here);
+      const i = mine.findIndex(c => c.id === id);
       const j = i + dir;
-      if (i < 0 || j < 0 || j >= cats.length) return false;
-      [cats[i], cats[j]] = [cats[j], cats[i]];
+      if (i < 0 || j < 0 || j >= mine.length) return false;
+      const a = cats.indexOf(mine[i]), b = cats.indexOf(mine[j]);
+      [cats[a], cats[b]] = [cats[b], cats[a]];
       saveCat();
       return true;
     },

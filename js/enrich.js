@@ -25,11 +25,14 @@ const HubEnrich = (() => {
   const say = msg => listeners.forEach(fn => { try { fn(msg) } catch {} });
 
   async function get(url){
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
     try {
-      const res = await fetch(url, { credentials:'omit', cache:'no-cache' });
+      const res = await fetch(url, { credentials:'omit', cache:'no-cache', signal:controller.signal });
       if (!res.ok) return null;
       return await res.text();
     } catch { return null }
+    finally { clearTimeout(timeout) }
   }
 
   /* The channel's own page, for the id and the avatar. A handle cannot be
@@ -49,8 +52,66 @@ const HubEnrich = (() => {
      is kept, because the question is "anything new", not "what have they done". */
   async function newest(ytId){
     const xml = await get(HubYT.feedUrl(ytId));
+    if (xml === null) return undefined; // failed request; an empty feed is still a success
     const items = xml ? HubYT.parseFeed(xml) : [];
     return items.length ? items[0] : null;
+  }
+
+  /* ── Instagram ─────────────────────────────────────────────────────────────
+     The same job with none of the same tools. There is no feed to poll and no
+     page that answers a logged-out fetch, so an account is looked at by opening
+     it in a background tab and reading the document — which the worker does,
+     because only the worker can open a tab and still be listening when the
+     content script inside it reports.
+
+     Two loads at most per account, and the second only when it has earned it:
+     the profile for the picture and the top of the grid, and then, if a
+     shortcode has appeared that this account has never shown before, that one
+     post for its real `<time datetime>`. That timestamp is the point of the
+     second load — with it, `latest` on this board means exactly what it means
+     on the other, and the fresh card, the new chip, the newest-first sort and
+     the latest-post box all work without knowing which site they are looking
+     at. */
+  const probe = (url, ms = 25000) =>
+    HubBridge.askFor({ type:'igProbe', url, timeout:ms }, ms + 4000);
+
+  async function instagram(ch, job){
+    const patch = {};
+    const facts = await probe(HubIG.profileUrl(HubIG.parse(ch.url)?.key || ''));
+
+    /* A login wall, a timeout, or a tab that would not open. The account keeps
+       everything it had and is asked again next time — the one thing that must
+       not happen is a signed-out moment quietly emptying the board. */
+    if (!facts || facts.kind !== 'profile' || !facts.profile) return { patch, failed:true };
+
+    const p = facts.profile;
+    if (p.avatar) patch.avatar = p.avatar;
+    if (p.handle) patch.handle = p.handle;
+    patch.pageAt = Date.now();
+    patch.checkedAt = Date.now();
+    patch.igPosts = p.posts.slice();
+
+    if (!job.needFeed || !p.posts.length) return { patch, failed:false };
+
+    /* What is new here. On an account HUB has never looked at there is no
+       "new" to speak of, so the newest post is taken simply to give the card
+       something to show; after that it is strictly the codes that were not
+       here before, in the order the grid lists them — which puts a pinned post
+       out of the running without having to detect that it is pinned. */
+    const known = new Set(ch.igPosts || []);
+    const fresh = p.posts.filter(code => !known.has(code));
+    const pick = known.size ? fresh[0] : p.posts[0];
+    if (!pick || (ch.latest && ch.latest.videoId === pick)) return { patch, failed:false };
+
+    const post = await probe(HubIG.postUrl(pick));
+    if (!post || post.kind !== 'post' || !post.post || !post.post.at)
+      /* The grid was read and the post was not. Recording the codes anyway
+         would make this post permanently un-new, so they are dropped and the
+         whole thing is tried again next time. */
+      return { patch:{ ...patch, igPosts:ch.igPosts || [] }, failed:true };
+
+    patch.latest = { videoId:pick, at:post.post.at, title:post.post.title || '', thumb:post.post.thumb || '' };
+    return { patch, failed:false };
   }
 
   /* ── A pass over the board ─────────────────────────────────────────────────
@@ -77,10 +138,11 @@ const HubEnrich = (() => {
      Nothing here is allowed to be the reason the board does not render: a
      channel that will not answer keeps what it had and is asked again next
      time. */
-  async function pass({ force = false, ui } = {}){
+  async function pass({ force = false, ui, platform = 'youtube' } = {}){
     if (!can() || running) return { done:0, failed:0 };
     running = true;
     let done = 0, failed = 0;
+    const isIG = platform === 'instagram';
 
     try {
       const feedEvery = Math.max(1, (ui && ui.checkEvery) || 6) * 3600e3;
@@ -92,9 +154,13 @@ const HubEnrich = (() => {
          neither is not in the list at all, which is why a second refresh a
          minute after the first costs nothing. */
       const jobs = [];
-      Store.channels().forEach(ch => {
-        const needPage = force || !ch.ytId || !ch.avatar
-                       || now - (ch.pageAt || 0) > pageEvery;
+      Store.channels().filter(ch => ch.platform === platform).forEach(ch => {
+        /* Instagram has one page and it carries both answers, so there is no
+           second clock to keep: whichever of the two is due, the same single
+           load settles them both. */
+        const needPage = isIG
+          ? (force || !ch.avatar || now - (ch.pageAt || 0) > pageEvery)
+          : (force || !ch.ytId || !ch.avatar || now - (ch.pageAt || 0) > pageEvery);
         const needFeed = wantNew && (force || !ch.latest
                        || now - (ch.checkedAt || 0) > feedEvery);
         if (needPage || needFeed) jobs.push({ ch, needPage, needFeed });
@@ -109,6 +175,17 @@ const HubEnrich = (() => {
         const { ch } = job;
         const patch = {};
         let ytId = ch.ytId;
+        let didFail = false;
+        say({ at, of:total, id:ch.id, phase:'start', name:ch.name });
+
+        if (isIG){
+          const out = await instagram(ch, job);
+          Store.enrich(ch.id, out.patch);
+          done++;
+          if (out.failed) failed++;
+          say({ at:++at, of:total, id:ch.id, phase:'done', name:ch.name, failed });
+          return;
+        }
 
         /* When the id is already known the two requests do not depend on each
            other, so they go out together. When it is not, the feed has to wait:
@@ -118,9 +195,10 @@ const HubEnrich = (() => {
           if (info){ if (info.ytId){ patch.ytId = info.ytId }
                      if (info.avatar) patch.avatar = info.avatar;
                      patch.pageAt = Date.now() }
-          else failed++;
+          else didFail = true;
           if (top) patch.latest = { videoId:top.videoId, title:top.title, at:top.at };
-          patch.checkedAt = Date.now();
+          if (top === undefined) didFail = true;
+          else patch.checkedAt = Date.now();
         } else {
           if (job.needPage){
             const info = await lookup(ch);
@@ -128,24 +206,33 @@ const HubEnrich = (() => {
               if (info.ytId){ patch.ytId = info.ytId; ytId = info.ytId }
               if (info.avatar) patch.avatar = info.avatar;
               patch.pageAt = Date.now();
-            } else failed++;
+            } else didFail = true;
           }
           if (job.needFeed && ytId){
             const top = await newest(ytId);
             if (top) patch.latest = { videoId:top.videoId, title:top.title, at:top.at };
-            patch.checkedAt = Date.now();
+            if (top === undefined) didFail = true;
+            else patch.checkedAt = Date.now();
           }
         }
 
         Store.enrich(ch.id, patch);
         done++;
-        say({ at:++at, of:total, name:ch.name });
+        if (didFail) failed++;
+        say({ at:++at, of:total, id:ch.id, phase:'done', name:ch.name, failed });
       }
 
       /* A fixed number of lanes, each pulling the next job off the pile as it
          finishes its own. No batching: one slow channel holds up its own lane
          and nothing else. */
-      const lanes = Math.max(1, Math.min(8, (ui && ui.lanes) || 5));
+      /* Two lanes on Instagram, not five. A lane there is a whole page load in
+         a real tab rather than a few kilobytes of XML, and the difference
+         between two at a time and five at a time is the difference between
+         something that reads as browsing and something that reads as a script.
+         It is a dial of its own for the same reason. */
+      const lanes = isIG
+        ? Math.max(1, Math.min(4, (ui && ui.igLanes) || 2))
+        : Math.max(1, Math.min(8, (ui && ui.lanes) || 5));
       say({ at:0, of:total, name:'' });
       await Promise.all(Array.from({ length:Math.min(lanes, total) }, async () => {
         while (next < total) await one(jobs[next++]);

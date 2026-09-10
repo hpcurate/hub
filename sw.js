@@ -38,7 +38,7 @@
    else's server. Once fetched they never need fetching again.
 */
 
-const VERSION = 'v0.10.0';
+const VERSION = 'v0.18.0';
 const SHELL   = 'hub-shell-' + VERSION;
 const FONTS   = 'hub-fonts-' + VERSION;
 
@@ -52,6 +52,7 @@ const PRECACHE = [
   './ext/scope.js',
   './ext/model.js',
   './ext/yt.js',
+  './ext/ig.js',
   './js/store.js',
   './js/bridge.js',
   './js/enrich.js',

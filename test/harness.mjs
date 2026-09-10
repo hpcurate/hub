@@ -722,8 +722,8 @@ await tick();
   ok('a row for every part there is',
      $$('#card-body .set-part').length === w.HubModel.PARTS.length,
      String($$('#card-body .set-part').length));
-  ok('and six zones to put one in',
-     $$('#card-body [data-k="slot-name"] .zc').length === 6);
+  ok('and a nine-cell placement grid for each element',
+     $$('#card-body [data-k="slot-name"] .zone-map .zc').length === 9);
 
   click($('#card-body [data-k="layout"] .seg-b[data-v="list"]'));
   await tick();
@@ -750,32 +750,15 @@ await tick();
   ok('so is its ground', $('#grid').dataset.surface === 'flat');
 }
 {
-  /* ── Moving a part ──────────────────────────────────────────────────────────
-     The whole point of the editor: a part is somewhere, and somewhere is a zone
-     you can pick. The card in the DOM has to actually change parents. */
-  const nameIn = () => $('#grid .card .card-name').closest('.zone').dataset.z;
-  ok('the name starts in the top left', nameIn() === 'tl');
-  click($('#card-body [data-k="slot-name"] .zc[data-z="br"]'));
+  const name=$('#grid .card .card-name');
+  ok('elements render inside the responsive card grid',name.parentElement.classList.contains('zone'));
+  click($('#card-body [data-k="slot-name"] [data-z="mc"]'));
   await tick();
-  ok('and can be moved to the bottom right', nameIn() === 'br', nameIn());
-  ok('the stored slots say so',
-     JSON.parse(w.localStorage.getItem('hub.ui.v1')).slots.name === 'br');
-  ok('the card in the editor moved with it',
-     $('#card-prev .card .card-name').closest('.zone').dataset.z === 'br');
-  click($('#card-body [data-k="slot-name"] .zc[data-z="tl"]'));
-  await tick();
-  ok('and back again', nameIn() === 'tl');
-
-  const tagIn = () => $('#grid .card .tag').closest('.zone').dataset.z;
-  click($('#card-body [data-k="slot-tag"] .zc[data-z="tr"]'));
-  await tick();
-  ok('a second part moves on its own', tagIn() === 'tr');
-  ok('and the first one stayed where it was', nameIn() === 'tl');
-  click($('#card-body [data-k="slot-tag"] .zc[data-z="bl"]'));
+  ok('an element can move to any of the nine grid cells',
+    $('#grid .card .card-name').closest('.zone').dataset.z==='mc' && w.Store.ui().slots.name==='mc');
+  click($('#card-body [data-k="slot-name"] [data-z="tl"]'));
   await tick();
 
-  /* A part that is off is not on the card at all, which is what lets an empty
-     zone row stand down rather than leaving a gap where it used to be. */
   click($('#card-body [data-k="slot-desc"] .part-sw'));
   await tick();
   ok('a part switched off leaves the card', !$('#grid .card .card-desc'));
@@ -784,18 +767,7 @@ await tick();
   ok('and comes back', !!$('#grid .card .card-desc'));
 }
 {
-  ok('every zone has a direction', $$('#card-body [data-k="zones"] .zg').length === 6);
-  click($('#card-body [data-k="zones"] .zg[data-z="tl"] .seg-b[data-v="column"]'));
-  await tick();
-  ok('a zone can be told to stack', $('#grid').getAttribute('data-zone-tl') === 'column');
-  ok('and it is remembered',
-     JSON.parse(w.localStorage.getItem('hub.ui.v1')).zones.tl === 'column');
-  click($('#card-body [data-k="zones"] .zg[data-z="tl"] .seg-b[data-v="row"]'));
-  await tick();
-  ok('and back to a row', $('#grid').getAttribute('data-zone-tl') === 'row');
-}
-{
-  ok('there are presets', $$('#card-body .presets .btn').length === 4);
+  ok('there are presets', $$('#card-body .presets [data-preset]').length === 4);
   click($('#card-body .presets [data-preset="classic"]'));
   await tick();
   ok('one sets several dials at once',
@@ -806,9 +778,7 @@ await tick();
   click($('#card-body .presets [data-preset="poster"]'));
   await tick();
   ok('another sets different ones',
-     $('#grid').dataset.border === 'accent' && $('#grid').getAttribute('data-zone-tl') === 'column');
-  ok('a preset writes the slots too',
-     JSON.parse(w.localStorage.getItem('hub.ui.v1')).slots.badges === 'bl');
+     $('#grid').dataset.border === 'accent' && w.Store.ui().avatarSize===52);
   click($('#card-body [data-k="border"] .seg-b[data-v="none"]'));
   await tick();
   ok('a dial moved afterwards is still yours', $('#grid').dataset.border === 'none');
@@ -824,12 +794,6 @@ console.log('\nthe dot, the avatar and the fresh card');
   set($('#q'), '');
   await tick();
 
-  click($('#card-body [data-k="dotOnAvatar"]'));
-  await tick();
-  ok('the dot can be pinned to the avatar', $('#grid').dataset.dot === 'avatar');
-  click($('#card-body [data-k="dotOnAvatar"]'));
-  await tick();
-  ok('and unpinned back into its zone', $('#grid').dataset.dot === 'slot');
   set($('#s-newDotSize'), '11');
   await tick();
   ok('and sized', d.documentElement.style.getPropertyValue('--dot-size') === '11px');
@@ -918,19 +882,52 @@ console.log('\nthe type sizes');
 click($('#btn-set'));
 await tick();
 {
+  /* 0.17 puts every type dial through the app-wide scale, so what is written
+     is the number and the multiplier rather than a finished pixel. `--ui`
+     defaults to 1, so the sizes are unchanged until the scale is moved. */
+  const px = v => d.documentElement.style.getPropertyValue(v).replace(/\s+/g, '');
   set($('#s-nameSize'), '21');
   await tick();
-  ok('the name has a size', d.documentElement.style.getPropertyValue('--name-px') === '21px');
+  ok('the name has a size', px('--name-px') === 'calc(21px*var(--ui))', px('--name-px'));
   set($('#s-descSize'), '11');
   await tick();
-  ok('so does the description', d.documentElement.style.getPropertyValue('--desc-px') === '11px');
+  ok('so does the description', px('--desc-px') === 'calc(11px*var(--ui))', px('--desc-px'));
   set($('#s-badgeSize'), '12');
   await tick();
-  ok('and the badges', d.documentElement.style.getPropertyValue('--badge-px') === '12px');
+  ok('and the badges', px('--badge-px') === 'calc(12px*var(--ui))', px('--badge-px'));
   set($('#s-titleSize'), '40');
   await tick();
-  ok('and the wordmark', d.documentElement.style.getPropertyValue('--title-px') === '40px');
+  ok('and the wordmark', px('--title-px') === 'calc(40px*var(--ui))', px('--title-px'));
   ok('and settings opens the card editor', !!$('#set-body [data-k="cardeditor"] .btn'));
+
+  /* The two new dials. The board always answered the window; the chrome around
+     it never answered anything, which is what "the content does not scale"
+     was. One number now moves both, and the air around them is its own. */
+  set($('#s-uiScale'), '1.25');
+  await tick();
+  ok('text size is one dial over the whole app', px('--ui') === '1.25', px('--ui'));
+  ok('and the card sizes are expressed through it, so one move takes all of them',
+    px('--name-px') === 'calc(21px*var(--ui))' && px('--desc-px') === 'calc(11px*var(--ui))',
+    px('--name-px'));
+  set($('#s-uiDensity'), '1.2');
+  await tick();
+  ok('spacing is a second dial, kept apart from it', px('--dens') === '1.2', px('--dens'));
+  {
+    const css = fs.readFileSync(path.join(APP, 'css/hub.css'), 'utf8');
+    ok('the chrome restates its own sizes through the scale',
+      /\.btn\{height:calc\(34px \* var\(--ui,1\)\)/.test(css) &&
+      /\.chip\{height:calc\(28px \* var\(--ui,1\)\)/.test(css) &&
+      /body\{font-size:calc\(14px \* var\(--ui,1\)\)\}/.test(css));
+    ok('and the density dial never touches a font size',
+      /\.bar\{gap:calc\(10px \* var\(--dens,1\)\)/.test(css) &&
+      !/font-size:calc\([\d.]+px \* var\(--dens/.test(css));
+    /* The one type on a card that had no dial at all, which is what the badges
+       setting was quietly not reaching. */
+    ok('the card badges read the badge dial', /\.tag,\.seen\{font-size:var\(--badge-px/.test(css));
+  }
+  set($('#s-uiScale'), '1');
+  set($('#s-uiDensity'), '1');
+  await tick();
 }
 
 console.log('\nthe heat has steps now');
@@ -1093,6 +1090,9 @@ console.log('\nthe filter plays the board’s own entry');
   await tick();
   ok('clearing the filter plays it too',
      $$('#grid .card').every(c => c.classList.contains('in')));
+  const entered = $('#grid .card.in');
+  entered.dispatchEvent(new w.Event('animationend', { bubbles:true }));
+  ok('the opening animation is removed after its first play', !entered.classList.contains('in'));
 }
 
 console.log('\nthe avatar, every way of showing one');
@@ -1303,6 +1303,7 @@ console.log('\nr opens one of them');
 {
   set($('#q'), '');
   await tick();
+  d.activeElement?.blur(); // exercise the shortcut outside a text field
   let opened = 0;
   $$('#grid .card .card-hit').forEach(a => a.addEventListener('click', () => { opened++ }));
   d.dispatchEvent(new w.KeyboardEvent('keydown', { key:'r', bubbles:true }));
@@ -1376,6 +1377,695 @@ ok('n opens a new channel', !$('#sheet-ch').hidden && $('#c-url').value === '');
 d.dispatchEvent(new w.KeyboardEvent('keydown', { key:'Escape', bubbles:true }));
 await tick();
 ok('escape closes the pane', $('#sheet-ch').hidden || $('#sheet-ch').classList.contains('out'));
+
+console.log('\ncard effects and preview states');
+{
+  click($('#btn-card'));
+  const choose = (key, value) => click($('#card-body [data-k="' + key + '"] [data-v="' + value + '"]'));
+  choose('freshStyle', 'tint');
+  choose('freshAnimation', 'ripple');
+  choose('freshColorSource', 'custom');
+  set($('#s-freshColor'), '#00ffaa');
+  set($('#s-freshIntensity'), 85);
+  click($('#card-body [data-k="freshBadge"]'));
+  ok('fresh styling is persisted', w.Store.ui().freshStyle === 'tint' && w.Store.ui().freshIntensity === 85);
+  ok('preview uses the custom highlight colour', $('#card-prev .card').style.getPropertyValue('--fresh-c') === '#00ffaa');
+  ok('the optional fresh badge is visible', !!$('#card-prev .b-fresh'));
+  click($('[data-preview="normal"]'));
+  ok('normal preview removes fresh styling and badge', !$('#card-prev .is-fresh') && !$('#card-prev .b-fresh'));
+  click($('[data-preview="refresh"]'));
+  ok('refresh can be previewed without a request', !!$('#card-prev .is-refreshing'));
+  choose('refreshEffect', 'pulse');
+  ok('refresh effect updates both grids', $('#grid').dataset.refreshEffect === 'pulse' && $('#card-prev').dataset.refreshEffect === 'pulse');
+  choose('washEffect', 'drift');
+  set($('#s-washX'), 80);
+  set($('#s-avatarWash'), 20);
+  set($('#s-washBlur'), 4);
+  ok('image effect and position reach the preview',
+    $('#card-prev').dataset.washEffect === 'drift' && $('#card-prev .card').style.getPropertyValue('--wash-x') === '80%');
+  ok('preview has a logo background', !!$('#card-prev .wash').style.backgroundImage);
+  choose('hoverEffect', 'zoom');
+  ok('hover choice reaches the board', $('#grid').dataset.hover === 'zoom');
+  click($('[data-preview="fresh"]'));
+  set($('#s-freshHours'), 1);
+  ok('fresh preview stays fresh for a one-hour window', !!$('#card-prev .is-fresh'));
+  const now = Date.now();
+  ok('future upload is not fresh', !w.Store.isFresh({latest:{at:now + 3600000}}));
+  ok('expired upload is not fresh', !w.Store.isFresh({latest:{at:now - 3600001}}));
+  ok('recent upload stays fresh after acknowledgement', w.Store.isFresh({latest:{at:now - 1000}, dotAt:now, seen:now}));
+  const exported = JSON.parse(w.Store.exportJSON());
+  w.Store.setUi({washEffect:'mono'});
+  w.Store.importJSON(JSON.stringify(exported));
+  ok('effects survive export and import', w.Store.ui().washEffect === 'drift' && w.Store.ui().freshColor === '#00ffaa');
+  const clean = w.eval('HubModel.fillUi({freshStyle:"junk",washBlur:999,freshSpeed:"bad",freshColor:"red"})');
+  ok('invalid imported effects fall back safely', clean.freshStyle === 'glow' && clean.washBlur === 12 && clean.freshSpeed === 3.4 && clean.freshColor === '');
+  click($('#sheet-card [data-close]'));
+  click($('#btn-set'));
+  set($('#s-motion'), 0);
+  ok('motion off disables continuous effects', d.documentElement.classList.contains('motion-off'));
+  set($('#s-motion'), 1);
+  click($('#sheet-set [data-close]'));
+}
+
+console.log('\nrefresh progress and failures');
+{
+  w.chrome = {runtime:{id:'test'}};
+  const waiting = [];
+  w.fetch = (url, options) => new Promise(resolve => waiting.push({url, options, resolve}));
+  const finish = () => waiting.splice(0).forEach(r => r.resolve({ok:true, text:async () =>
+    r.url.includes('/feeds/') ? '<feed></feed>' : '<meta itemprop="channelId" content="UCabcdefghijklmnopqrstuv">'}));
+  const run = w.eval('HubEnrich.pass({force:true,ui:{lanes:1}})');
+  await tick();
+  ok('refresh starts with visible progress', !$('#refresh-status').hidden && $('#refresh-progress').value === 0);
+  ok('board and buttons report busy', $('#grid').getAttribute('aria-busy') === 'true' && $('#btn-refresh').disabled && $('#s-refresh').disabled);
+  ok('only the active lane has a loading card', $$('#grid .is-refreshing').length === 1);
+  ok('requests carry an abort signal', waiting.every(r => !!r.options.signal));
+  const duplicate = await w.eval('HubEnrich.pass({force:true})');
+  ok('a duplicate refresh does not start another pass', duplicate.done === 0 && $('#btn-refresh').disabled);
+  while (w.eval('HubEnrich.busy()')) { finish(); await tick() }
+  const out = await run;
+  ok('completed progress matches channel count', out.done === w.Store.channels().length && $('#refresh-progress').value === out.done);
+  ok('refresh clears all busy states', !$('#btn-refresh').disabled && $('#grid').getAttribute('aria-busy') === 'false' && !$('#grid .is-refreshing'));
+  ok('completion is announced', $('#refresh-label').textContent.includes('up to date'));
+  w.fetch = async () => ({ok:false});
+  const oldLatest = JSON.stringify(w.Store.channels().map(c => c.latest));
+  const failed = await w.eval('HubEnrich.pass({force:true})');
+  ok('failure is counted once per channel', failed.failed === failed.done);
+  ok('failed refresh keeps known uploads', oldLatest === JSON.stringify(w.Store.channels().map(c => c.latest)));
+  ok('failure releases buttons and reports it', !$('#btn-refresh').disabled && $('#refresh-label').textContent.includes('could not fully refresh'));
+  const originalTimer = w.setTimeout;
+  w.setTimeout = (fn,ms,...args) => originalTimer(fn,ms === 15000 ? 1 : ms,...args);
+  w.fetch = (url,{signal}) => new Promise((resolve,reject) => signal.addEventListener('abort',()=>reject(new Error('timeout'))));
+  const timedOut = await w.eval('HubEnrich.pass({force:true})');
+  w.setTimeout = originalTimer;
+  ok('timed-out requests finish the pass and release loading state', timedOut.failed === timedOut.done && !$('#btn-refresh').disabled && !$('#grid .is-refreshing'));
+  delete w.chrome;
+}
+
+console.log('\nsettings expansion');
+{
+  w.Store.setUi({savedLooks:[],categoryLooks:{},pinnedLook:'',freshAging:false,animationSchedule:'continuous',latestPreview:true,uploadView:'all',groupUploads:false});
+  click($('#btn-set'));set($('#s-motion'),1);click($('#sheet-set [data-close]'));click($('#btn-card'));
+  const choose=(key,value)=>click($('#card-body [data-k="'+key+'"] [data-v="'+value+'"]'));
+  const change=(el,value)=>{el.value=value;el.dispatchEvent(new w.Event('change',{bubbles:true}))};
+  const gridded=w.HubModel.fillUi({slots:{name:'mr',desc:'ml'},zones:{ml:'top'}});
+  ok('grid positions and their stacking mode are validated',gridded.slots.name==='mr' && gridded.zones.ml==='top');
+  choose('freshStyle','edge');set($('#s-freshHours'),24);
+  $('#look-name').value='My saved look';click($('#look-save'));
+  const saved=w.Store.ui().savedLooks[0];
+  ok('saving a look captures layout and effects',saved.name==='My saved look' && saved.look.slots.name==='tl' && saved.look.freshStyle==='edge');
+  change($('#look-select'),'neon');click($('#look-apply'));
+  ok('built-in looks apply immediately',w.Store.ui().freshStyle==='glow');
+  change($('#look-select'),saved.id);click($('#look-apply'));
+  ok('a saved look restores complete card settings',w.Store.ui().freshStyle==='edge' && w.Store.ui().slots.name==='tl');
+  click($('#sheet-card [data-close]'));click($('#btn-card'));
+  choose('freshStyle','tint');click($('#preview-before'));
+  ok('before comparison affects only the preview',$('#card-prev .card').dataset.freshStyle==='edge' && $('#grid .card').dataset.freshStyle==='tint');
+  click($('#preview-before'));
+  ok('after comparison restores current preview',$('#card-prev .card').dataset.freshStyle==='tint');
+  click($('#card-undo'));
+  ok('undo restores the previous setting',w.Store.ui().freshStyle==='edge');
+  set($('#s-freshIntensity'),95);
+  const section=$('#s-freshIntensity').closest('details');click(section.querySelector('.section-reset'));
+  ok('section reset restores its defaults',w.Store.ui().freshIntensity===60 && w.Store.ui().freshStyle==='glow');
+  click($('#card-undo'));
+  ok('section reset can be undone',w.Store.ui().freshIntensity===95 && w.Store.ui().freshStyle==='edge');
+  set($('#card-search'),'parallax');
+  ok('settings search reveals relevant controls',!$('#card-body [data-k="washEffect"]').hidden && $('#card-body [data-k="freshStyle"]').hidden);
+  set($('#card-search'),'');
+  const cat=w.Store.addCat('Effect tests','#44bbff');
+  const ch=w.Store.addChannel({url:'https://www.youtube.com/@effects',name:'Effect fixture',cat:cat.id});
+  const ageCh=w.Store.addChannel({url:'https://www.youtube.com/@aging',name:'Aging fixture'});
+  w.Store.enrich(ch.id,{latest:{videoId:'freshEffect',at:Date.now()-1000,title:'Fresh title'},avatar:'https://example.com/avatar.png'});
+  w.Store.enrich(ageCh.id,{latest:{videoId:'agingVideo',at:Date.now()-12*3600000,title:'Aged title'}});
+  click($('#sheet-card [data-close]'));click($('#btn-card'));set($('#s-freshHours'),24);
+  change($('#card-body [data-category="'+cat.id+'"]'),saved.id);
+  const card=()=>$('#grid .card[data-id="'+ch.id+'"]');
+  ok('category look overrides effects',card().dataset.freshStyle==='edge');
+  change($('#card-body [data-category="__pinned"]'),'neon');w.Store.togglePin(ch.id);set($('#q'),'');
+  ok('pinned-channel style takes precedence',card().dataset.freshStyle==='glow');
+  set($('#s-freshIntensity'),100);click($('#card-body [data-k="freshAging"]'));
+  const strength=parseFloat($('#grid .card[data-id="'+ageCh.id+'"]').style.getPropertyValue('--fresh-strength'));
+  ok('a halfway-aged upload has half the highlight strength',strength>.49 && strength<.51,String(strength));
+  choose('animationSchedule','once');
+  ok('first discovery records a played upload',!!w.Store.channels().find(c=>c.id===ageCh.id).animationSeen);
+  set($('#q'),'no fixture can match this');await tick();set($('#q'),'');await tick();
+  ok('filtering back does not replay a discovered upload',!$('#grid .card[data-id="'+ageCh.id+'"]').classList.contains('play-once'));
+  w.Store.enrich(ageCh.id,{latest:{videoId:'nextVideo',at:Date.now(),title:'Next title'}});set($('#q'),'');
+  ok('a newer upload gets its own one-time animation',$('#grid .card[data-id="'+ageCh.id+'"]').classList.contains('play-once'));
+  choose('animationSchedule','continuous');
+  w.Store.clearNew();click($('[data-upload-view="today"]'));await tick();
+  ok('posted-today filtering is independent of unread dots',!!card() && !card().classList.contains('is-new'));
+  ok('posted-today filtering includes only the last 24 hours',$$('#grid .card').every(el=>w.HubModel.uploadGroup(w.Store.channels().find(c=>c.id===el.dataset.id))==='today'));
+  click($('[data-upload-view="all"]'));click($('#group-uploads'));
+  ok('age groups add headings to the board',$$('#grid .upload-heading').length>0);
+  const queue=card().querySelector('.video-queue');click(queue);
+  ok('latest-video preview adds the right upload to the queue',w.Store.queue().some(q=>q.videoId==='freshEffect') && card().querySelector('.video-queue').disabled);
+  ok('latest-video preview carries its title and link',card().querySelector('.video-title').textContent==='Fresh title' && card().querySelector('.video-open').href.endsWith('freshEffect'));
+  let exported;
+  w.URL.createObjectURL=blob=>{exported=blob;return 'blob:test'};w.URL.revokeObjectURL=()=>{};
+  change($('#look-select'),saved.id);click($('#look-export'));
+  const content=await new Promise(resolve=>{const reader=new w.FileReader();reader.onload=()=>resolve(reader.result);reader.readAsText(exported)});
+  ok('look export is separate from board data',JSON.parse(content).kind==='hub.look' && !JSON.parse(content).channels);
+  Object.defineProperty($('#look-file'),'files',{configurable:true,value:[{size:content.length,text:async()=>content}]});
+  $('#look-file').dispatchEvent(new w.Event('change'));await tick();
+  ok('look import adds a preset without replacing channels',w.Store.ui().savedLooks.length===2 && !!w.Store.channels().find(c=>c.id===ch.id));
+  const persisted=JSON.parse(w.Store.exportJSON());
+  ok('board export includes saved looks and category assignments',persisted.ui.savedLooks.length===2 && persisted.ui.categoryLooks[cat.id]===saved.id);
+  const snapshot=w.Store.ui();snapshot.categoryLooks[cat.id]='quiet';
+  ok('returned settings cannot mutate stored category styles',w.Store.ui().categoryLooks[cat.id]===saved.id);
+  click($('#sheet-card [data-close]'));click($('#btn-set'));
+  ok('settings exposes design and popup sections',!!$('#set-body [data-k="design-layout"]') && !!$('#set-body [data-k="popupFresh"]'));
+  click($('#set-body [data-k="design-layout"] .btn'));
+  ok('settings opens the positioning section',$('#card-body [data-k="slot-name"]').closest('details').open);
+}
+
+console.log('\nmore dials');
+{
+  w.Store.setUi({...w.HubModel.DEFAULT_UI,savedLooks:[],categoryLooks:{},pinnedLook:''});
+  click($('#btn-card'));
+  const choose=(key,value)=>click($('#card-body [data-k="'+key+'"] [data-v="'+value+'"]'));
+  const cardOf=id=>$('#grid .card[data-id="'+id+'"]');
+  const cat=w.Store.cats()[0];
+  const dials=w.Store.addChannel({url:'https://www.youtube.com/@dials',name:'Dials fixture',cat:cat.id});
+  w.Store.enrich(dials.id,{latest:{videoId:'dialsVideo',at:Date.now()-1000,title:'Dials title'},avatar:'https://example.com/dials.png'});
+  set($('#q'),'');
+
+  /* animations */
+  const animationSection=$('#card-body [data-section="animations"]');
+  const speedKeys=['hoverSpeed','enterSpeed','exitSpeed','filterSpeed','reorderSpeed','freshSpeed','washAnimationSpeed','avatarSpeed','dotSpeed','refreshSpeed','previewCueSpeed','previewSpeed','previewDismissSpeed','sheetSpeed','pageBgSpeed','resizeSpeed','interfaceSpeed'];
+  ok('every animation speed is grouped in one section',
+    speedKeys.every(key=>animationSection.querySelector('[data-k="'+key+'"]')));
+  ok('each animation family has more choices',
+    !!animationSection.querySelector('[data-k="cardEnter"] [data-v="glide"]') &&
+    !!animationSection.querySelector('[data-k="cardExit"] [data-v="implode"]') &&
+    !!animationSection.querySelector('[data-k="refreshEffect"] [data-v="ripple"]') &&
+    !!animationSection.querySelector('[data-k="previewAnimation"] [data-v="flip"]'));
+  set($('#s-avatarSpeed'),1.1);set($('#s-dotSpeed'),2.3);set($('#s-refreshSpeed'),1.7);
+  set($('#s-previewSpeed'),.4);set($('#s-previewDismissSpeed'),.5);set($('#s-previewCueSpeed'),2.6);
+  ok('per-family speeds reach the rendered card',
+    cardOf(dials.id).style.getPropertyValue('--avatar-cycle')==='1.1s' &&
+    cardOf(dials.id).style.getPropertyValue('--dot-cycle')==='2.3s' &&
+    cardOf(dials.id).style.getPropertyValue('--refresh-cycle')==='1.7s' &&
+    cardOf(dials.id).style.getPropertyValue('--preview-cycle')==='0.4s' &&
+    cardOf(dials.id).style.getPropertyValue('--preview-dismiss-cycle')==='0.5s' &&
+    cardOf(dials.id).style.getPropertyValue('--preview-cue-cycle')==='2.6s');
+  choose('freshAnimation','orbit');
+  choose('freshEasing','spring');
+  choose('freshDirection','alternate');
+  set($('#s-animationStagger'),120);
+  const fx=cardOf(dials.id);
+  ok('a new fresh animation reaches the card',fx.dataset.freshAnimation==='orbit');
+  ok('the curve and direction are the card\u2019s own',
+    fx.style.getPropertyValue('--fresh-ease').includes('cubic-bezier') && fx.style.getPropertyValue('--fresh-dir')==='alternate');
+  ok('a stagger is a per-card delay',fx.style.getPropertyValue('--fx-stagger')==='120ms' && fx.style.getPropertyValue('--i')!=='');
+  choose('cardEnter','flip');
+  set($('#s-enterStagger'),60);
+  ok('the entry animation and its stagger reach the board',
+    $('#grid').dataset.enter==='flip' && $('#grid').style.getPropertyValue('--enter-stagger')==='60ms');
+  choose('hoverEffect','tilt');
+  set($('#s-hoverStrength'),175);
+  ok('hover strength scales whichever hover is on',
+    $('#grid').dataset.hover==='tilt' && cardOf(dials.id).style.getPropertyValue('--hover-k')==='1.75');
+  choose('dotAnimation','ping');
+  ok('the dot has an animation of its own',$('#grid').dataset.dotAnimation==='ping');
+  choose('refreshEffect','bar');
+  ok('the new refresh effects apply',$('#grid').dataset.refreshEffect==='bar');
+  choose('animationSchedule','new');
+  ok('effects can be limited to unread cards',w.Store.ui().animationSchedule==='new');
+  choose('animationSchedule','continuous');
+
+  /* backgrounds */
+  click($('#card-body [data-background-preset="cinematic"]'));
+  ok('background presets set the related controls together',
+    w.Store.ui().washEffect==='kenburns' && w.Store.ui().washMask==='bottom' && w.Store.ui().avatarWash===34);
+  set($('#s-avatarWash'),60);
+  choose('washFit','tile');
+  choose('washMask','radial');
+  choose('washBlend','screen');
+  choose('washOverlay','scanlines');
+  choose('washOverlayColor','accent');
+  set($('#s-washSaturate'),140);
+  set($('#s-washContrast'),120);
+  set($('#s-washRotate'),12);
+  set($('#s-washHoverBoost'),160);
+  const bg=cardOf(dials.id);
+  ok('background opacity is no longer capped at a third',w.Store.ui().avatarWash===60 && bg.style.getPropertyValue('--wash')==='0.600');
+  ok('fit, mask and blend are the card\u2019s own attributes',
+    bg.dataset.washFit==='tile' && bg.dataset.washMask==='radial' && bg.dataset.washBlend==='screen');
+  ok('colour, contrast, angle and hover boost are numbers on the card',
+    bg.style.getPropertyValue('--wash-sat')==='1.4' && bg.style.getPropertyValue('--wash-contrast')==='1.2' &&
+    bg.style.getPropertyValue('--wash-rot')==='12deg' && bg.style.getPropertyValue('--wash-boost')==='1.6');
+  ok('an overlay carries the colour it was told to take',
+    bg.dataset.washOverlay==='scanlines' && bg.style.getPropertyValue('--overlay-c')===w.Store.ui().accent);
+  choose('cardTint','category');
+  set($('#s-cardTintStrength'),24);
+  choose('cardGradient','radial');
+  const ground=cardOf(dials.id);
+  ok('the card ground is a layer of its own',!!ground.querySelector('.ground'));
+  ok('a card tint takes the category colour',
+    ground.dataset.cardTint==='category' && ground.style.getPropertyValue('--tint-c')==='var(--c)' &&
+    ground.style.getPropertyValue('--tint-strength')==='0.24' && ground.dataset.cardGradient==='radial');
+
+  /* the latest video box */
+  choose('previewThumbSize','l');
+  choose('previewMode','click');
+  ok('the box knows its size and how it is opened',
+    cardOf(dials.id).dataset.thumbSize==='l' && cardOf(dials.id).dataset.videoPreview==='click');
+  click($('#card-body [data-k="previewTitle"]'));
+  click($('#card-body [data-k="previewAge"]'));
+  ok('the title and the age can each be switched off',
+    cardOf(dials.id).querySelector('.video-title').hidden && cardOf(dials.id).querySelector('.video-age').hidden);
+  click($('#card-body [data-k="previewTitle"]'));
+  click($('#card-body [data-k="previewAge"]'));
+  click($('#card-body [data-k="previewOnlyFresh"]'));
+  const stale=w.Store.addChannel({url:'https://www.youtube.com/@stale',name:'Stale fixture'});
+  w.Store.enrich(stale.id,{latest:{videoId:'staleVideo',at:Date.now()-96*3600000,title:'Stale title'}});
+  set($('#q'),'');
+  ok('the box can be kept to fresh uploads only',
+    !cardOf(dials.id).querySelector('.video-panel').hidden && cardOf(stale.id).querySelector('.video-panel').hidden);
+  click($('#card-body [data-k="previewOnlyFresh"]'));
+  click($('#sheet-card [data-close]'));
+
+  /* one channel refusing it */
+  click(cardOf(dials.id).querySelector('.card-edit'));
+  ok('the channel pane offers the box as an exception',!$('#c-preview').hidden && $('#c-preview').textContent.includes('on'));
+  click($('#c-preview'));
+  ok('one channel can hide its own latest video box',
+    w.Store.channels().find(c=>c.id===dials.id).hidePreview && cardOf(dials.id).querySelector('.video-panel').hidden);
+  ok('and the rest of the board keeps theirs',!cardOf(stale.id).querySelector('.video-panel').hidden);
+  click($('#c-preview'));
+  ok('and it can be given back',!w.Store.channels().find(c=>c.id===dials.id).hidePreview);
+  click($('#sheet-ch [data-close]'));
+
+  /* the box's own hide button — the same channel switch, reached from the card */
+  click($('#btn-card'));
+  choose('previewMode','always');
+  ok('the box carries a hide button of its own',
+    !cardOf(dials.id).querySelector('.video-hide').hidden);
+  click(cardOf(dials.id).querySelector('.video-hide'));
+  ok('clicking it takes the box off that one card',
+    w.Store.channels().find(c=>c.id===dials.id).hidePreview &&
+    cardOf(dials.id).querySelector('.video-panel').hidden);
+  ok('and only that one',!cardOf(stale.id).querySelector('.video-panel').hidden);
+  w.Store.togglePreview(dials.id);
+  click($('#card-body [data-k="previewHideButton"]'));
+  ok('the button itself is a setting',
+    cardOf(dials.id).querySelector('.video-hide').hidden);
+  click($('#card-body [data-k="previewHideButton"]'));
+  choose('previewAnimation','slide');
+  ok('and the box knows how it is meant to appear',
+    cardOf(dials.id).dataset.previewAnimation==='slide');
+
+  click($('#card-body [data-k="previewLabel"]'));
+  ok('the latest-video label can be removed',
+    cardOf(dials.id).querySelector('.video-toggle').classList.contains('label-hidden'));
+  ok('a new upload gives the card its own cue',cardOf(dials.id).classList.contains('has-preview-cue'));
+  cardOf(dials.id).dispatchEvent(new w.Event('pointerenter'));
+  ok('hovering settles the cue into its small indicator',
+    cardOf(dials.id).classList.contains('preview-cue-seen') && !!cardOf(dials.id).querySelector('.video-indicator'));
+  choose('previewDismissAnimation','none');
+  click(cardOf(dials.id).querySelector('.video-title'));
+  ok('clicking the preview dismisses that upload',
+    cardOf(dials.id).querySelector('.video-panel').hidden &&
+    w.Store.channels().find(c=>c.id===dials.id).previewDismissed.includes('dialsVideo'));
+  const cardCss=fs.readFileSync(path.join(APP,'css','hub.css'),'utf8');
+  ok('dismissal lets the card and grid resize smoothly',
+    cardCss.includes('min-height calc(var(--resize-cycle,.28s) * var(--mo))') && cardCss.includes('.grid>.card{align-self:start'));
+  w.Store.enrich(dials.id,{latest:{videoId:'dialsVideo2',at:Date.now(),title:'A later upload'}});
+  set($('#q'),'');
+  ok('a later upload is not hidden by the earlier dismissal',!cardOf(dials.id).querySelector('.video-panel').hidden);
+
+  click($('#card-body [data-k="slot-posted"] .part-sw'));
+  ok('posted time is an independently placed element',
+    cardOf(dials.id).querySelector('.b-posted').dataset.part==='posted' &&
+    cardOf(dials.id).querySelector('.b-seen').dataset.part==='seen');
+
+  w.Store.updateCat(cat.id,{icon:'book'});set($('#q'),'');
+  click($('#card-body [data-k="slot-catIcon"] .part-sw'));
+  ok('a category icon is a card element of its own',!!cardOf(dials.id).querySelector('.card-cat-icon .ico'));
+
+  click($('[data-preview="manual"]'));
+  const manual=$('#card-prev .card');
+  ok('manual mode shows every movable element',
+    manual.dataset.manual==='true' && manual.querySelectorAll('[data-part]').length===w.HubModel.PART_KEYS.length);
+  click($('#preview-hidden'));
+  ok('the preview can hide disabled elements',manual.querySelectorAll('[data-part]').length<w.HubModel.PART_KEYS.length);
+  click($('#preview-hidden'));
+  ok('and reveal them again',manual.querySelectorAll('[data-part]').length===w.HubModel.PART_KEYS.length);
+  const transfer={value:'',setData(_type,value){this.value=value},getData(){return this.value}};
+  const dragEvent=(type,target,clientX=0,clientY=0)=>{
+    const event=new w.MouseEvent(type,{bubbles:true,cancelable:true,clientX,clientY});
+    Object.defineProperty(event,'dataTransfer',{value:transfer});target.dispatchEvent(event);
+  };
+  dragEvent('dragstart',manual.querySelector('[data-part="desc"]'));
+  dragEvent('drop',manual.querySelector('.zone[data-z="br"]'));
+  ok('dragging moves an element to a responsive grid cell',
+    w.Store.ui().slots.desc==='br' && manual.querySelector('[data-part="desc"]').closest('.zone').dataset.z==='br');
+  dragEvent('dragstart',manual.querySelector('[data-part="name"]'));
+  const description=manual.querySelector('[data-part="desc"]');
+  dragEvent('dragover',description,-1);
+  dragEvent('drop',description,-1);
+  ok('elements in a grid cell can be reordered',
+    w.Store.ui().orders.br.indexOf('name')<w.Store.ui().orders.br.indexOf('desc'));
+  click($('#manual-fullscreen'));
+  ok('manual mode has a fullscreen editing view',
+    $('.card-stage').classList.contains('manual-fullscreen') && $('#manual-fullscreen').getAttribute('aria-pressed')==='true');
+  click($('#manual-fullscreen'));
+
+  /* the rest of the background */
+  choose('washEffect','kenburns');
+  choose('washMask','vignette');
+  choose('washFit','width');
+  choose('washBlend','difference');
+  choose('washOverlay','mesh');
+  choose('washOverlayBlend','screen');
+  set($('#s-washBrightness'),140);
+  set($('#s-washHue'),90);
+  set($('#s-washAnimationSpeed'),9);
+  set($('#s-washFade'),60);
+  set($('#s-washOverlayAngle'),40);
+  const deep=cardOf(dials.id);
+  ok('the newest background answers are attributes on the card',
+    deep.dataset.washEffect==='kenburns' && deep.dataset.washMask==='vignette' &&
+    deep.dataset.washFit==='width' && deep.dataset.washBlend==='difference' &&
+    deep.dataset.washOverlay==='mesh' && deep.dataset.washOverlayBlend==='screen');
+  ok('and brightness, hue, speed, reach and angle are numbers on it',
+    deep.style.getPropertyValue('--wash-bright')==='1.4' &&
+    deep.style.getPropertyValue('--wash-hue')==='90deg' &&
+    deep.style.getPropertyValue('--wash-cycle')==='9s' &&
+    deep.style.getPropertyValue('--wash-fade')==='0.6' &&
+    deep.style.getPropertyValue('--overlay-angle')==='40deg');
+
+  /* texture and shadow, which are backgrounds that are not pictures */
+  choose('cardTexture','crosshatch');
+  choose('cardShadow','deep');
+  set($('#s-cardTextureOpacity'),24);
+  set($('#s-cardTextureScale'),14);
+  ok('a texture is a layer of its own on every card',
+    !!cardOf(dials.id).querySelector('.texture'));
+  ok('and it knows its pattern, its strength and its size',
+    cardOf(dials.id).dataset.texture==='crosshatch' &&
+    cardOf(dials.id).dataset.cardShadow==='deep' &&
+    cardOf(dials.id).style.getPropertyValue('--texture-opacity')==='0.240' &&
+    cardOf(dials.id).style.getPropertyValue('--texture-size')==='14px');
+  choose('cardTexture','none');
+  ok('and none really is off, not merely faint',
+    cardOf(dials.id).style.getPropertyValue('--texture-opacity')==='0');
+
+  /* where a wave starts, and how many times it runs */
+  choose('freshAnimation','wave');
+  set($('#s-animationStagger'),200);
+  choose('staggerOrder','reverse');
+  const cards=$$('#grid .card');
+  ok('reversing the order counts the last card as first',
+    cards[cards.length-1].style.getPropertyValue('--i')==='0' &&
+    cards[0].style.getPropertyValue('--i')===String(cards.length-1));
+  choose('staggerOrder','index');
+  ok('and putting it back counts from the front again',
+    cards[0].style.getPropertyValue('--i')==='0');
+  set($('#s-freshLoops'),3);
+  ok('a lit card can be told to settle down',
+    cardOf(dials.id).style.getPropertyValue('--fresh-loops')==='3');
+  set($('#s-freshLoops'),0);
+  ok('and 0 is still forever',
+    cardOf(dials.id).style.getPropertyValue('--fresh-loops')==='infinite');
+  click($('#sheet-card [data-close]'));
+
+  click($('#btn-resize'));
+  set($('[data-resize="cardWidth"]'),316);
+  set($('[data-resize="cardHeight"]'),176);
+  set($('[data-resize="cardRadius"]'),18);
+  set($('[data-resize="washScale"]'),135);
+  ok('the home resize menu writes all four card dimensions',
+    w.Store.ui().size==='custom' && w.Store.ui().cardWidth===316 && w.Store.ui().cardHeight===176 &&
+    w.Store.ui().cardRadius===18 && w.Store.ui().washScale===135);
+  ok('home resizing updates the board without rebuilding its cards',
+    $('#grid').style.getPropertyValue('--card-width')==='316px' &&
+    $('#grid').style.getPropertyValue('--card-height')==='176px');
+  click($('#btn-card'));
+  ok('the editor preview uses the dimensions from resizing mode',
+    $('#card-prev').style.getPropertyValue('--card-width')==='316px' &&
+    $('#card-prev').style.getPropertyValue('--card-height')==='176px');
+  choose('headFont','syne');choose('bodyFont','manrope');choose('metaFont','spacemono');
+  ok('heading, body and metadata fonts can be chosen separately',
+    d.documentElement.style.getPropertyValue('--head').includes('Syne') &&
+    d.documentElement.style.getPropertyValue('--body').includes('Manrope') &&
+    d.documentElement.style.getPropertyValue('--mono').includes('Space Mono'));
+  click($('#sheet-card [data-close]'));
+  click($('#resize-done'));
+
+  /* the page's own background */
+  click($('#btn-set'));
+  click($('#set-body [data-k="pageBg"] [data-v="aurora"]'));
+  set($('#s-pageBgStrength'),70);
+  set($('#s-pageBgScale'),40);
+  set($('#s-pageBgAngle'),200);
+  const html=w.document.documentElement;
+  ok('the page carries its background as one attribute',html.dataset.pageBg==='aurora');
+  ok('with its strength, its size and its angle beside it',
+    html.style.getPropertyValue('--page-bg-a')==='0.7' &&
+    html.style.getPropertyValue('--page-bg-size')==='40px' &&
+    html.style.getPropertyValue('--page-bg-angle')==='200deg');
+  ok('and it follows the accent until it is given a colour of its own',
+    html.style.getPropertyValue('--page-bg-c')===w.Store.ui().accent);
+  click($('#sheet-set [data-close]'));click($('#btn-card'));
+  click($('#card-body [data-k="pageBgAnimate"]'));
+  ok('moving is a switch of its own',html.classList.contains('page-bg-animate'));
+  click($('#card-body [data-k="pageBgAnimate"]'));
+  click($('#sheet-card [data-close]'));click($('#btn-set'));
+  click($('#set-body [data-k="pageBg"] [data-v="plain"]'));
+  ok('and plain leaves the ground exactly as it was',
+    html.dataset.pageBg==='plain' && !html.classList.contains('page-bg-animate'));
+  click($('#sheet-set [data-close]'));
+
+  const clean=w.eval('HubModel.fillUi({washMask:"junk",washSaturate:900,washRotate:-900,cardEnter:"nope",animationStagger:"bad",previewThumbSize:"xl",washOverlayCustom:"red",washHue:900,staggerOrder:"sideways",cardTexture:"velvet",pageBg:"lava",freshLoops:99,pageBgColor:"blue",enterEasing:"whoosh"})');
+  ok('the new dials fall back and clamp like the old ones',
+    clean.washMask==='diagonal' && clean.washSaturate===200 && clean.washRotate===-45 &&
+    clean.cardEnter==='rise' && clean.animationStagger===0 && clean.previewThumbSize==='m' && clean.washOverlayCustom==='');
+  ok('and so does every one added with them',
+    clean.washHue===180 && clean.staggerOrder==='index' && clean.cardTexture==='none' &&
+    clean.pageBg==='plain' && clean.freshLoops===10 && clean.pageBgColor==='' &&
+    clean.enterEasing==='out');
+  w.Store.removeChannel(dials.id);w.Store.removeChannel(stale.id);
+}
+
+console.log('\ntwo boards');
+{
+  w.Store.setUi({ ...w.HubModel.DEFAULT_UI, savedLooks:[], categoryLooks:{}, pinnedLook:'' });
+  const $tab = key => $('#tabs .tab[data-tab="' + key + '"]');
+  /* A card that has left the board is faded out and then removed, and the
+     removal is a promise. So every check that a card is *gone* has to let that
+     promise run first, and while one is still fading the newest node with a
+     given id is the live one. */
+  const settle = () => new Promise(r => setTimeout(r, 0));
+  const nodesFor = id => $$('#grid .card[data-id="' + id + '"]');
+  const cardOf = id => nodesFor(id)[nodesFor(id).length - 1] || null;
+  const shows = id => nodesFor(id).length > 0;
+  set($('#q'), '');
+
+  ok('the strip offers both boards', !!$tab('youtube') && !!$tab('instagram'));
+  ok('and youtube is the one showing',
+     $tab('youtube').classList.contains('on') && $tab('youtube').getAttribute('aria-selected') === 'true');
+
+  const tube = w.Store.addChannel({ url:'https://www.youtube.com/@tubefixture', name:'Tube fixture' });
+  const gram = w.Store.addChannel({ url:'https://www.instagram.com/gramfixture/', name:'Gram fixture' });
+  set($('#q'), '');
+  await settle();
+
+  ok('a url decides which board a record is on',
+     tube.platform === 'youtube' && gram.platform === 'instagram');
+  ok('the youtube board shows the channel', shows(tube.id));
+  ok('and does not show the account',       !shows(gram.id));
+
+  click($tab('instagram'));
+  await settle();
+  ok('switching boards is remembered', w.Store.ui().tab === 'instagram');
+  ok('the instagram board shows the account', shows(gram.id));
+  ok('and does not show the channel',         !shows(tube.id));
+  ok('the strip moves with it',
+     $tab('instagram').classList.contains('on') && !$tab('youtube').classList.contains('on'));
+
+  ok('the controls change language',
+     $('#q').placeholder === 'search accounts' && $('#btn-add').textContent === '+ account' &&
+     $('#sort-posted').textContent === 'newest post');
+  ok('and so does the count line', $('#meta').textContent.includes('account'));
+
+  /* categories belong to a board */
+  const igCats = w.Store.cats();
+  ok('the second board seeded its own categories',
+     igCats.length === 5 && igCats.every(c => c.platform === 'instagram'));
+  ok('and they are not the first board\u2019s',
+     igCats.some(c => c.name === 'friends') && !igCats.some(c => c.name === 'learning'));
+  const made = w.Store.addCat('makers', '#A78BFA', '');
+  ok('a category made here belongs here', made.platform === 'instagram');
+  click($tab('youtube'));
+  await settle();
+  ok('and is not on the other board', !w.Store.cats().some(c => c.id === made.id));
+  ok('which still has its own five', w.Store.cats().every(c => c.platform === 'youtube'));
+  ok('while a lookup by id still finds either', !!w.Store.cat(made.id));
+
+  /* the chips are this board's */
+  set($('#q'), '');
+  const chipNames = () => $$('#chips .chip .t').map(el => el.textContent);
+  ok('the youtube chips are youtube\u2019s', chipNames().includes('learning'));
+  click($tab('instagram'));
+  await settle();
+  ok('and the instagram chips are instagram\u2019s',
+     chipNames().includes('friends') && !chipNames().includes('learning'));
+
+  /* a url that belongs on the other board says so and goes there */
+  click($('#btn-add'));
+  set($('#c-url'), 'https://www.youtube.com/@elsewhere');
+  set($('#c-name'), 'Elsewhere');
+  $('#f-ch').dispatchEvent(new w.Event('submit', { bubbles:true, cancelable:true }));
+  ok('a youtube url added from the instagram tab is filed as a channel',
+     w.Store.channels().find(c => c.name === 'Elsewhere').platform === 'youtube');
+  ok('and the board follows it rather than swallowing it', w.Store.ui().tab === 'youtube');
+
+  /* counts, heat and the new dot are all per board */
+  click($tab('youtube'));
+  await settle();
+  const ytMax = w.Store.maxClicks();
+  click($tab('instagram'));
+  await settle();
+  ok('a board with nothing opened on it has no heat yet', w.Store.maxClicks() === 0);
+  w.Store.touch(gram.id); w.Store.touch(gram.id); w.Store.touch(gram.id);
+  ok('the heat scale is this board\u2019s', w.Store.maxClicks() === 3);
+  click($tab('youtube'));
+  await settle();
+  ok('and the other board is untouched by it', w.Store.maxClicks() === ytMax);
+
+  /* An account nobody has opened, with something posted since: the one shape
+     that reads as new. `gram` has been opened three times just above, so its
+     newest post is older than the last look at it and is deliberately not. */
+  w.Store.enrich(gram.id, { latest:{ videoId:'AAA111', at:Date.now() - 1000, title:'a post' } });
+  const unseen = w.Store.addChannel({ url:'https://www.instagram.com/unseenfixture/', name:'Unseen fixture' });
+  w.Store.enrich(unseen.id, { latest:{ videoId:'BBB222', at:Date.now() - 1000, title:'a newer post' } });
+  set($('#q'), '');
+  await settle();
+  ok('a board you are not looking at can still say it has something new',
+     !!$tab('instagram').querySelector('.tab-new'));
+  ok('and an account opened since it posted is not new',
+     !w.Store.isNew(w.Store.channels().find(c => c.id === gram.id)));
+  ok('the count on the bar is the board in front of you',
+     w.Store.countNew() === w.Store.countNewOn('youtube') && w.Store.countNewOn('instagram') >= 1);
+
+  /* the latest-post box points at instagram, not at youtube */
+  click($tab('instagram'));
+  set($('#q'), '');
+  await settle();
+  const open = cardOf(gram.id).querySelector('.video-open');
+  ok('the newest post opens on instagram',
+     open.getAttribute('href') === 'https://www.instagram.com/p/AAA111/');
+
+  /* an export carries both boards, and an old one is topped up */
+  const dump = JSON.parse(w.Store.exportJSON());
+  ok('an export carries both boards',
+     dump.channels.some(c => c.platform === 'instagram') &&
+     dump.cats.some(c => c.platform === 'instagram') && dump.ui.tab === 'instagram');
+
+  const legacy = JSON.stringify({ kind:'hub.export', version:2, at:new Date().toISOString(),
+    channels:[{ url:'https://www.youtube.com/@legacy', name:'Legacy', added:Date.now() }],
+    cats:[{ id:'c1', name:'old', color:'#A78BFA', order:0 }], ui:{}, queue:[] });
+  w.Store.importJSON(legacy);
+  ok('a board written before there were two is a youtube board',
+     w.Store.channels()[0].platform === 'youtube' && w.Store.allCats()[0].platform === 'youtube');
+  ok('and the empty board is topped up rather than left bare',
+     w.Store.allCats().filter(c => c.platform === 'instagram').length === 5);
+}
+
+console.log('\nlooking an instagram account up');
+{
+  /* Instagram has no feed, so a check is a page opened in a background tab and
+     read by the content script. Here the tab is the stub: what is being tested
+     is the half that decides *what to open and what the answer means* — which
+     shortcode counts as new, when the second load is worth making, and what
+     happens when it fails. */
+  const pages = new Map();
+  const calls = [];
+  w.chrome = { runtime: { id:'test', sendMessage(msg, cb){
+    calls.push(msg.url);
+    cb(msg.type === 'igProbe' ? (pages.get(msg.url) || null) : null);
+  } } };
+
+  const profile = (handle, posts, avatar) => pages.set('https://www.instagram.com/' + handle + '/',
+    { kind:'profile', profile:{ handle, name:'@' + handle, avatar:avatar || 'https://cdn/' + handle + '.jpg', posts } });
+  const post = (code, at, title) => pages.set('https://www.instagram.com/p/' + code + '/',
+    { kind:'post', post:{ shortcode:code, at, title, thumb:'https://cdn/' + code + '.jpg' } });
+
+  w.Store.setUi({ ...w.HubModel.DEFAULT_UI, savedLooks:[], categoryLooks:{}, pinnedLook:'', tab:'instagram' });
+  const acct = w.Store.addChannel({ url:'https://www.instagram.com/probefixture/', name:'Probe fixture' });
+  const rec = () => w.Store.channels().find(c => c.id === acct.id);
+  const runIG = () => w.eval("HubEnrich.pass({force:true,platform:'instagram',ui:{igLanes:1}})");
+
+  /* First look: nothing is known, so the newest post is read to give the card
+     something to show. */
+  const posted = Date.now() - 3600e3;
+  profile('probefixture', ['AAA111', 'BBB222', 'CCC333']);
+  post('AAA111', posted, 'the newest one');
+  calls.length = 0;
+  let out = await runIG();
+
+  ok('one account is one job', out.done === 1 && out.failed === 0);
+  ok('the profile and then one post, and nothing else', calls.length === 2 &&
+     calls[0] === 'https://www.instagram.com/probefixture/' &&
+     calls[1] === 'https://www.instagram.com/p/AAA111/', calls.join(' '));
+  ok('the picture comes off the profile', rec().avatar === 'https://cdn/probefixture.jpg');
+  ok('and the top of the grid is remembered',
+     JSON.stringify(rec().igPosts) === JSON.stringify(['AAA111','BBB222','CCC333']));
+  ok('the newest post is stored the way youtube stores one',
+     rec().latest.videoId === 'AAA111' && rec().latest.at === posted &&
+     rec().latest.title === 'the newest one');
+  ok('which is what makes it fresh on this board too', w.Store.isFresh(rec()));
+
+  /* Nothing has changed, so the second load is not worth making. */
+  calls.length = 0;
+  await runIG();
+  ok('a grid that has not moved costs one load, not two', calls.length === 1);
+  ok('and the newest post is left alone', rec().latest.videoId === 'AAA111');
+
+  /* A pinned post sits at the front forever. The one that is actually new is
+     behind it, and it is the one that has to be picked up. */
+  profile('probefixture', ['AAA111', 'DDD444', 'BBB222']);
+  const later = Date.now() - 60e3;
+  post('DDD444', later, 'posted since');
+  calls.length = 0;
+  await runIG();
+  ok('a new post behind a pinned one is still found',
+     calls[1] === 'https://www.instagram.com/p/DDD444/' && rec().latest.videoId === 'DDD444');
+  ok('and it carries its own real time', rec().latest.at === later);
+  ok('an account nobody has opened since then reads as new', w.Store.isNew(rec()));
+
+  /* The grid was read and the post was not. Recording the codes anyway would
+     make that post permanently un-new, so nothing is recorded. */
+  const before = JSON.stringify(rec().igPosts);
+  profile('probefixture', ['EEE555', 'AAA111', 'DDD444']);
+  calls.length = 0;
+  out = await runIG();
+  ok('a post that will not open is a failure', out.failed === 1);
+  ok('and the grid is not recorded, so the post is still new next time',
+     JSON.stringify(rec().igPosts) === before);
+  ok('while what was already known survives it', rec().latest.videoId === 'DDD444');
+
+  /* A login wall is not an empty account. */
+  pages.set('https://www.instagram.com/probefixture/', { kind:'wall' });
+  const known = JSON.stringify(rec().latest);
+  out = await runIG();
+  ok('a login wall is a failure, not an empty account', out.failed === 1);
+  ok('and it never empties the board', JSON.stringify(rec().latest) === known);
+
+  /* The other board is not touched by any of this. */
+  const tube = w.Store.addChannel({ url:'https://www.youtube.com/@notprobed', name:'Not probed' });
+  calls.length = 0;
+  await runIG();
+  ok('a youtube channel is not opened in a tab',
+     !calls.some(u => u && u.includes('youtube.com')));
+  ok('and is left exactly as it was', !w.Store.channels().find(c => c.id === tube.id).igPosts.length);
+
+  w.Store.removeChannel(acct.id); w.Store.removeChannel(tube.id);
+  delete w.chrome;
+}
 
 console.log('\nsummary');
 ok('no system dialog was reached at any point', systemDialogs === 0, systemDialogs + ' calls');

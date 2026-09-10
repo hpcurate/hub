@@ -1,13 +1,24 @@
 # HUB
 
-A board of YouTube channels. Open `index.html` — that is the whole install.
-It is also a Chromium extension, and, served over https, an installable web app.
+Two boards of links: your YouTube channels and your Instagram accounts. Open
+`index.html` — that is the whole install. It is also a Chromium extension, and,
+served over https, an installable web app.
 
 Built in ROOT's design language: the same VOID palette, the same shape and
 motion tokens, Grotesk for titles and JetBrains Mono for everything else.
 
 ## What it does
 
+- **Two boards** — a tab strip above the filter chips switches between
+  **youtube** and **instagram**. Each board has its own accounts and its own
+  categories; the card design, the settings, the queue and the export are
+  shared. It is a tab, not a filter: the search, the sort and the chips are all
+  about the board in front of you, and switching clears the ones that only meant
+  something on the other. Each tab carries the count of what is on it and a dot
+  when *that* board has something new, which is the point of the strip — a board
+  you are not looking at cannot otherwise tell you anything. The url decides
+  which board a record goes on, so a YouTube link pasted on the Instagram tab is
+  filed as a channel and the board follows it there.
 - **Channels** — a name, a YouTube URL, a description, a category. Leave the
   name blank and it is taken from the URL. Clicking one opens its **videos
   tab**, not its home page, which is a trailer and three shelves; that is a
@@ -56,14 +67,17 @@ motion tokens, Grotesk for titles and JetBrains Mono for everything else.
   the tab's own title too, so a pinned tab answers it without being opened.
 - **Time since last viewed** — clicking a card opens the channel and stamps the
   time. The card then says how long ago that was, and it is a sort order.
-- **Size** — S / M / L moves the grid's minimum column width. The columns
+- **Size** — S / M / L moves the grid's minimum column width. **Resize** opens
+  width, height, card-corner and background-scale sliders directly on the home
+  page. The columns
   themselves always divide the window, so the board fills whatever it is opened
   in — up to the **content width** set in settings, which is what keeps it from
   running the full span of an ultrawide.
 - **Export / import** — one JSON file with every channel, category and setting.
   Import replaces the board.
 
-- **Badges** — nine small facts a card can carry, each its own switch: last
+- **Card facts** — the small facts are independent elements with their own
+  switches and positions: last
   viewed, click count, when the channel last posted, when you added it, its rank
   on the board by clicks, how many of its videos you have queued, its handle,
   the category tag, and a dot when there is something new.
@@ -77,24 +91,175 @@ motion tokens, Grotesk for titles and JetBrains Mono for everything else.
   youtube.com, so without it half of HUB has an empty slot on every card. There
   is also a wash — the same picture again, huge and faint, as the card's own
   ground.
-- **The card editor** — **card** on the bar opens it. A card is **six zones**,
-  two to a row, and every part of one — avatar, name, description, category tag,
-  badges, the count, the new dot, the edit button — names the zone it sits in.
-  Move any of them anywhere; switch any of them off. Each zone has its own
-  direction, so the same six slots give you the avatar beside the name or above
-  it. At the top of the pane is a real card, built and painted by the board's own
-  renderer from the settings as they stand, so nothing there is an approximation.
-  The four presets (classic, compact, list, poster) live here now and write slots
-  and zones like everything else, and the dials underneath them are the card's:
+- **The card editor** — **card** on the bar opens it. **Manual mode** lets you
+  drag every element between nine responsive grid cells and reorder elements
+  within a cell. A fullscreen button enlarges the current card without changing
+  its proportions, and a preview toggle hides or reveals disabled elements while
+  arranging it. The four presets (classic, compact, list, poster) live
+  here, and the dials underneath them are the card's:
   shape, avatar size and edge, name lines, description lines, the dot, and the
   fresh-upload look.
 - **Settings for the rest** — every text size on the board, accent, corner
   radius, motion, content width, the heat and its steps, every badge, and — in
   the extension — how often a feed is checked, how long an avatar is trusted, and
   how many channels are asked about at once.
+- **Text size and spacing** — two dials over the *whole* app, not just the
+  cards. The board always answered the window; until 0.18 the header, the control
+  bar, the chips and the sheets around it answered nothing, and every size in
+  them was a pixel that looked right on one machine. **Text size** multiplies
+  every type size and control height in the app — the card's own four dials are
+  expressed through it, so one number moves all of them and each stays its own
+  dial afterwards. **Spacing** is the air around them and never touches a font
+  size, because "bigger text" and "more room" are different complaints and
+  setting one to fix the other is how a layout ends up wrong in both directions.
+  Both sit at 100% by default, which computes to exactly the board as it was.
 
 Keys: `/` search · `Enter` opens the first result · `n` new channel ·
 `r` opens one at random from whatever is on screen · `Esc` close.
+
+## Card effects and refresh
+
+Open **card** on the toolbar. **Posted today** customizes the last-24-hour look:
+glow, edge, tint or minimal; custom, accent or category colour; intensity,
+name tint and an optional badge. The window can be changed from 1 to 72
+hours. Clearing a new-video dot does not clear this time-based highlight; it
+expires automatically.
+
+**Eighteen animations** for a lit card — none, sheen, glint, breathe, float,
+wave, ripple, halo, pulse, shimmer, scan, corners, orbit, rays, flicker, neon,
+bounce and aurora — said at eighteen different volumes: glint passes once and
+then waits, wave and float move the card itself, corners draws a viewfinder
+round it, neon strikes like a tube, and aurora is a slow band of colour behind
+everything. Five dials apply to whichever one is on: the **curve** it runs on
+(ease, linear, steady, spring, bounce, snap, elastic), the **direction**, a
+**stagger** of up to a second and a half between one card and the next, **where
+that wave starts** — the first card, the last, the middle, both edges at once,
+or nowhere in particular — and **how many times** it runs before it settles
+down, which is a number now rather than always forever. **Play decorative
+effects** is still continuous, on hover, once per upload — or **new**, which
+runs them only while the card still carries an unread dot.
+
+All motion controls now live in one **Animations** section. Card arrival, exit,
+filtering, reordering, hover, fresh highlights, image motion, avatar hover, new
+dot, refresh, preview reveal, preview dismissal, preview cue, settings panels
+and the page background each have their own speed. The section also adds glide
+and tumble arrivals, drop/implode/spin exits, extra hover, avatar and dot effects,
+new refresh effects, and more preview and cue transitions.
+
+**Background image** is the channel's own picture behind the card. Five starting
+presets make the controls easier to approach: soft, full image, mono, cinematic
+and pattern. Fit, image size, left/right and up/down placement, rotation and fade
+come first; colour, brightness, contrast, blur, blend and overlays follow. It has
+four additional moving effects: float, orbit, pulse and diagonal. Opacity runs
+to 100%. Thirteen **overlays** — gradient, vignette, top,
+bottom, scanlines, grid, dots, noise, diagonal, mesh, frame, corners — at an
+angle and a blend mode of their own, in the category colour, the accent, the
+page ground or one of your own.
+
+**The card ground** is under all of that: a wash of the category colour, the
+accent or a custom one at whatever strength, stronger under the pointer if you
+want it, plus a gradient across the card — top, bottom, diagonal, radial, conic,
+corner, sweep or along the spine — at a strength of its own. Under *that* is a
+**texture** — noise, grain, grid, dots, lines or crosshatch, at its own opacity
+and size — which is the one background that is neither a picture nor a colour,
+and a **shadow** (soft, deep, glow, inner), because a card on a background
+sometimes needs one to stay a card.
+
+Use the preview buttons to compare normal, fresh and refreshing states, or open
+manual mode to arrange every element on the grid. The preview uses the current
+card dimensions, including changes made with the toolbar resize controls.
+
+In the extension, **refresh** on the toolbar shows progress and animates each
+active card with sweep, pulse, bar, blink, dim or no effect. Completed checks
+and failures are reported below the filters. All preferences are saved and
+included in exports. Settings → motion → none and the system's reduced-motion
+setting stop animations.
+
+## The latest video box
+
+Each card can carry its channel's newest upload: a thumbnail at one of three
+sizes, the title, how long ago it was posted, and **open** and **+ queue**
+buttons — every one of them its own switch. It is revealed on hover, always
+open, or only from its own button. It can be kept to **cards with a fresh
+upload** so the board is quiet apart from what is actually new.
+
+It is revealed with a fade, slide, expand or zoom. Clicking its thumbnail,
+title, or age dismisses that upload with a selectable fade, shrink, slide,
+blur, fold or fly animation. The card then smoothly closes to its normal
+height and the grid reflows. The next upload appears normally.
+
+The “latest video” label can be hidden. A separate card-wide cue can pulse,
+glow, sweep or ring while a new upload waits; hovering settles it and leaves a
+small indicator after the pointer moves away.
+
+And one channel can refuse it, from either end. **latest video: on / off** sits
+in that channel's edit pane, beside the pin; the box itself carries a **hide**
+button, which writes the same switch from where you are actually standing when
+you decide you never want that channel's uploads announced. That button is a
+setting of its own, so a board that never wants it never sees it. The board
+decides whether cards carry the box at all; this is the exception to it, and it
+travels with the channel in an export.
+
+## The page behind the board
+
+The largest background on the board is the one behind it, and it used to be one
+flat colour with no dial at all. Settings → *the page behind the board*:
+**plain, gradient, glow, grid, dots, noise, vignette, aurora** or **rays**, in
+the accent or a colour of its own, at a strength, a pattern size and an angle
+you pick, with **let it move** off by default — a background that never
+stops is the one thing a board you leave open all day cannot have.
+
+Every answer draws *over* the ground rather than replacing it, so `plain` is
+exactly the board as it always was, and none of the rest can leave the cards
+floating.
+
+## The Instagram board
+
+Everything the YouTube board does — categories, colours, sort, search, filter
+chips, last-viewed stamps, click heat, pins, the whole card design — with one
+difference that is not a choice: **Instagram is not guarded.** instagram.com
+browses exactly as it did before HUB was installed. Nothing is blocked, blurred
+or redirected. The Instagram tab is a board of accounts.
+
+There *is* a content script on instagram.com, and it is read-only — it contains
+no blocking code. It reports what is on a profile page, and in add mode it puts
+a **+ add to hub** button on a profile.
+
+### What's new, without a feed
+
+YouTube gives HUB a per-channel feed on a plain url with no key. Instagram gives
+nothing: no feed, and a logged-out fetch of a profile is answered with a login
+wall. So an account is checked the way a person would check it — **the page is
+opened in a background tab**, in the session already signed in, and read there.
+Two loads at most, the second only when it has earned it:
+
+1. **the profile**, for the picture and the shortcodes across the top of the grid
+2. **one post**, only when a shortcode has turned up that this account has never
+   shown before, for its real `<time datetime>`
+
+The grid carries no dates and does not need to: a shortcode is a stable id, so
+"something new" is a code that was not there last time. Pinned posts fall out of
+that for free — one never leaves the top, so its code is always already known
+and it never reads as new twice.
+
+The second load is what makes everything else work unchanged. With a real
+posted-at time, the lit fresh card, the 24-hour window, the **new** chip,
+newest-first sort and the latest-post box all work on this board without knowing
+which site they are looking at.
+
+Nothing is allowed to empty the board. A login wall, a timeout, a tab closed by
+hand or a post that will not open is a failure: the account keeps what it had
+and is asked again. When the grid is read but the post is not, the shortcodes
+are deliberately not recorded, so that post is still new next time.
+
+### Rate
+
+**Refresh checks the board in front of you**, not the other one, and runs on the
+button and on the `checkEvery` clock. Instagram gets **two lanes by default, not
+five**, on a dial of its own: a YouTube lane is a few kilobytes of XML, an
+Instagram lane is a whole page rendering in a real tab. Two at a time is the
+shape of somebody browsing. This is still automated access under Instagram's
+terms — keeping it slow is what keeps it unremarkable.
 
 ## As a web app
 
@@ -124,6 +289,9 @@ you the board as an extension page *and* a guard on YouTube.
 
 **Install:** Vivaldi → `vivaldi://extensions` → Developer mode on → *Load
 unpacked* → pick this folder.
+
+It asks for `storage`, YouTube, and — since v0.13.0 — instagram.com, where it
+runs a read-only script and no guard.
 
 **What it does:** open YouTube in a tab that did not come from the board, and
 **the tab goes to the board**. Not covered by it — the address changes, and the
@@ -194,7 +362,7 @@ browser, per machine — there is no account and no server.
 cd test && npm install && npm test
 ```
 
-Four files, run in order:
+Five files, run in order:
 
 | | |
 | --- | --- |
@@ -208,3 +376,8 @@ Same approach as `root/test`. They check behaviour, not looks: jsdom does not
 lay out or paint, so the grid, the animations and the type are not covered, and
 neither is anything that only a real browser has — the actual blur, the iframe
 loading, YouTube's own markup.
+
+For real layout and motion checks, run `electron test/visual.cjs` with an
+Electron executable. It runs a hidden Chromium window using local fixtures,
+checks mobile overflow and reduced motion, and saves screenshots and a result
+in `test/artifacts/`.

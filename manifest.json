@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "HUB",
-  "version": "0.10.0",
-  "description": "Your channel board is the only door into YouTube. Open it any other way and the page blurs until you pick a channel.",
+  "version": "0.18.0",
+  "description": "Two boards, one page: your YouTube channels and your Instagram accounts. The YouTube half is the only door into YouTube; the Instagram half is a board of accounts.",
   "icons": {
     "16": "icons/16.png",
     "48": "icons/48.png",
@@ -37,6 +37,20 @@
         "ext/guard.css"
       ],
       "run_at": "document_start",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "*://*.instagram.com/*"
+      ],
+      "js": [
+        "ext/ig.js",
+        "ext/insta.js"
+      ],
+      "css": [
+        "ext/insta.css"
+      ],
+      "run_at": "document_idle",
       "all_frames": false
     }
   ],

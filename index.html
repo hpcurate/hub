@@ -11,10 +11,7 @@
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <!-- Grotesk for titles, JetBrains Mono for text — the two faces the request
-       named. Both are ROOT's own: "Grotesk" is what its type pairings call
-       Space Grotesk, and --mono is JetBrains Mono in every pairing it ships. -->
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Manrope:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=Space+Mono:wght@400;700&family=Syne:wght@500;600;700&display=swap">
 
   <!-- The web app. Served over https this installs and keeps its own window;
        off disk and inside the extension the manifest is simply ignored and the
@@ -60,6 +57,13 @@
   </header>
 
   <!-- ── Controls ─────────────────────────────────────────────────────── -->
+  <!-- ── The two boards ──────────────────────────────────────
+       A tab, not a filter. Each board has its own accounts and its own
+       categories; the sort, the search, the chips and the card design are all
+       about the one in front of you. Built by the renderer, so a third
+       platform is a row in the model rather than markup here. -->
+  <div class="tabs" id="tabs" role="tablist" aria-label="Boards"></div>
+
   <div class="bar">
     <label class="field search">
       <svg viewBox="0 0 24 24" class="ic" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
@@ -74,7 +78,7 @@
         <option value="stale">longest unwatched</option>
         <option value="added">recently added</option>
         <option value="name">name</option>
-        <option value="posted">newest upload</option>
+        <option value="posted" id="sort-posted">newest upload</option>
       <option value="clicks">most clicked</option>
         <option value="cat">category</option>
       </select>
@@ -88,7 +92,9 @@
 
     <button class="btn" id="btn-catmode" title="Categorise by clicking cards">categorise</button>
     <button class="btn" id="btn-cats" title="Manage categories">categories</button>
+    <button class="btn" id="btn-resize" title="Resize cards on the board" aria-expanded="false">resize</button>
     <button class="btn" id="btn-card" title="Lay out the card">card</button>
+    <button class="btn refresh-button" id="btn-refresh" hidden><span class="refresh-icon" aria-hidden="true">↻</span> refresh</button>
     <!-- Only there when there is something to clear. A board seeded in one pass
          arrives with a dot on every card; this is the one gesture that answers
          all of them. -->
@@ -97,8 +103,27 @@
     <button class="btn" id="btn-set" title="Settings">settings</button>
   </div>
 
+  <div class="resizebar" id="resizebar" hidden>
+    <label><span>width</span><input type="range" data-resize="cardWidth" min="180" max="520" step="4"><output></output></label>
+    <label><span>height</span><input type="range" data-resize="cardHeight" min="88" max="360" step="4"><output></output></label>
+    <label><span>corners</span><input type="range" data-resize="cardRadius" min="0" max="40" step="1"><output></output></label>
+    <label><span>background</span><input type="range" data-resize="washScale" min="50" max="200" step="5"><output></output></label>
+    <button class="btn btn-s" id="resize-done">done</button>
+  </div>
+
   <!-- ── Category filter ──────────────────────────────────────────────── -->
   <div class="chips" id="chips"></div>
+  <div class="upload-views" role="group" aria-label="Upload age filter">
+    <span>uploads</span>
+    <button class="btn btn-s" data-upload-view="all">all</button>
+    <button class="btn btn-s" data-upload-view="today">posted today</button>
+    <button class="btn btn-s" data-upload-view="week">this week</button>
+    <button class="btn btn-s" id="group-uploads" aria-pressed="false">group by age</button>
+  </div>
+  <div class="refresh-status" id="refresh-status" hidden>
+    <span id="refresh-label" role="status" aria-live="polite"></span>
+    <progress id="refresh-progress" max="1" value="0" aria-label="Channel refresh progress"></progress>
+  </div>
 
   <!-- ── Categorise mode ──────────────────────────────────────────────────
        Pick one here, then click cards. The board stops being a set of links
@@ -164,6 +189,9 @@
       <!-- Written through the moment it is clicked, not on save: pinning is
            something you do to a channel that exists, not a field of one. -->
       <button type="button" class="btn btn-pin" id="c-pin" hidden>&#9734; pin</button>
+      <!-- The board-wide latest-video box, refused by this one channel. Same
+           door as the pin: written the moment it is clicked. -->
+      <button type="button" class="btn" id="c-preview" hidden>latest video: on</button>
       <span class="grow"></span>
       <button type="button" class="btn" data-close>cancel</button>
       <button type="submit" class="btn btn-y" id="c-save">save</button>
@@ -199,6 +227,8 @@
 <section class="sheet wide" id="sheet-set" hidden aria-modal="true" role="dialog" aria-label="Settings">
   <div class="sheet-in">
     <h2 class="sh-t">settings</h2>
+    <input class="settings-search" id="settings-search" type="search" placeholder="Find a setting…" aria-label="Find a setting">
+    <div class="settings-tools"><button class="btn btn-s" id="settings-undo" disabled>undo change</button></div>
     <div class="set-body" id="set-body"></div>
 
     <div class="row">
@@ -220,19 +250,30 @@
   </div>
 </section>
 
-<!-- ── the card editor ──────────────────────────────────────────────────────
-     A card at the top, built and painted by the board's own renderer, and every
-     dial that decides what one looks like underneath. The controls are built
-     from a list in app.js, like settings — including the two that only exist
-     here: a part and the zone it sits in, and a zone and which way it runs. -->
+<!-- Card editor. -->
 <section class="sheet wide" id="sheet-card" hidden aria-modal="true" role="dialog" aria-label="Card editor">
   <div class="sheet-in">
     <h2 class="sh-t">card</h2>
-    <p class="sh-s">every part of a card sits in one of six zones. this is a real card, drawn by the board.</p>
+    <p class="sh-s">place elements on a responsive nine-cell grid and preview every change before leaving the editor.</p>
+    <input class="settings-search" id="card-search" type="search" placeholder="Find a card setting…" aria-label="Find a card setting">
     <div class="card-stage">
-      <div class="grid" id="card-prev" data-size="m" aria-hidden="true"></div>
+      <div class="preview-controls" role="group" aria-label="Preview card state">
+        <span>preview</span>
+        <button type="button" class="btn btn-s" data-preview="normal" aria-pressed="false">normal</button>
+        <button type="button" class="btn btn-s on" data-preview="fresh" aria-pressed="true">fresh upload</button>
+        <button type="button" class="btn btn-s" data-preview="refresh" aria-pressed="false">refreshing</button>
+        <button type="button" class="btn btn-s" data-preview="manual" aria-pressed="false">manual mode</button>
+        <button type="button" class="btn btn-s" id="preview-hidden" aria-pressed="true">hide hidden elements</button>
+        <button type="button" class="btn btn-s manual-tools" id="manual-fullscreen" aria-pressed="false">fullscreen</button>
+        <button type="button" class="btn btn-s" id="preview-before" aria-pressed="false">before / after</button>
+        <button type="button" class="btn btn-s" id="card-undo" disabled>undo</button>
+      </div>
+      <div class="manual-canvas">
+        <div class="grid" id="card-prev" data-size="m" aria-hidden="true"></div>
+      </div>
     </div>
     <div class="set-body" id="card-body"></div>
+    <input type="file" id="look-file" accept="application/json,.json" hidden>
     <div class="sh-acts">
       <span class="grow"></span>
       <button type="button" class="btn" data-close>done</button>
@@ -259,10 +300,12 @@
 <!-- The quick-categorise menu, anchored to whichever card's tag was clicked.
      One element reused, because only one can be open. -->
 <div class="qmenu" id="qmenu" hidden></div>
+<p class="notice" id="notice" role="status" aria-live="polite" hidden></p>
 
 <script src="ext/scope.js"></script>
 <script src="ext/model.js"></script>
 <script src="ext/yt.js"></script>
+<script src="ext/ig.js"></script>
 <script src="js/store.js"></script>
 <script src="js/webapp.js"></script>
 <script src="js/bridge.js"></script>

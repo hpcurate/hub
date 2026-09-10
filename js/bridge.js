@@ -19,14 +19,20 @@ const HubBridge = (() => {
   const blocked = inExt && params.has('blocked');
   const from = params.get('from') || '';
 
-  const ask = msg => new Promise(resolve => {
+  const askFor = (msg, ms) => new Promise(resolve => {
     let done = false;
     const finish = v => { if (!done){ done = true; resolve(v) } };
-    setTimeout(() => finish(null), 1500);
+    setTimeout(() => finish(null), ms);
     try {
       chrome.runtime.sendMessage(msg, res => { void chrome.runtime.lastError; finish(res || null) });
     } catch { finish(null) }
   });
+
+  /* A second and a half is right for everything the guard does, all of which is
+     a storage read away. It is far too short for the one thing that is not: a
+     probe has to open a page on a site nobody controls and wait for it to
+     render, so it says how long it is prepared to wait. */
+  const ask = msg => askFor(msg, 1500);
 
   /* Opening a channel.
        off disk        — false: the anchor does what anchors do
@@ -107,5 +113,6 @@ const HubBridge = (() => {
     else mountBlocked();
   }
 
-  return { inExt, blocked, from, open, ask };
+  return {
+    askFor, inExt, blocked, from, open, ask };
 })();

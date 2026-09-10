@@ -13,7 +13,7 @@
    variable that matters. storage.session survives the restart; the in-memory
    map is only a write queue.
 */
-importScripts('scope.js', 'model.js', 'yt.js');
+importScripts('scope.js', 'model.js', 'yt.js', 'ig.js');
 
 const SETTINGS = { enabled:true, snoozeUntil:0 };
 
@@ -102,6 +102,44 @@ async function statusFor(tabId){
 /* ── Messages ────────────────────────────────────────────────────────────────
    Every reply is a status object, so a caller never has to ask twice to find
    out what the world looks like after its own change. */
+/* ── Probing Instagram ───────────────────────────────────────────────────────
+   YouTube hands out a per-channel feed on a plain url with no key, so the board
+   can simply ask it a question. Instagram hands out nothing: there is no feed,
+   and a logged-out fetch of a profile is answered with a login wall. The only
+   way left is the one a person would use — open the page, in the session that
+   is already signed in, and look at it.
+
+   So: a background tab, the content script's report, and the tab closed again.
+   It is slower than a fetch and it is meant to be. One page load per account,
+   in two lanes rather than five, is the shape of somebody browsing; a burst of
+   forty parallel requests is the shape of something Instagram soft-blocks.
+
+   The board asks for these — the worker owns them because only the worker can
+   open a tab and still be listening when the content script in it reports. */
+const probes = new Map();          /* tabId -> resolve */
+
+async function probeInstagram(url, ms){
+  if (!HubIG.isInstagram(url)) return null;
+
+  let tab = null;
+  try {
+    /* active:false, so the tab that is doing the looking never takes the
+       window away from whatever you were doing in it. */
+    tab = await chrome.tabs.create({ url, active:false });
+  } catch { return null }
+  if (!tab || tab.id == null) return null;
+
+  const facts = await new Promise(resolve => {
+    const timer = setTimeout(() => { probes.delete(tab.id); resolve(null) }, Math.max(4000, ms || 20000));
+    probes.set(tab.id, out => { clearTimeout(timer); probes.delete(tab.id); resolve(out) });
+  });
+
+  /* The tab goes whatever happened. A probe that leaves tabs behind on failure
+     would fill the window on the one day Instagram is slow. */
+  try { await chrome.tabs.remove(tab.id) } catch {}
+  return facts;
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   const tabId = sender.tab ? sender.tab.id : null;
 
@@ -205,19 +243,27 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
          shape both ends share. */
       case 'addChannel': {
         const url = HubModel.normUrl(msg.url);
-        const scope = HubScope.parse(url);
+        /* Which board this belongs on, and therefore which rule book says what
+           counts as the same account twice. Read off the url rather than taken
+           from the caller: a content script is not the authority on what site
+           it is running on. */
+        const platform = HubModel.platformOf(url);
+        const rules = platform === 'instagram' ? HubIG : HubScope;
+        const scope = rules.parse(url);
         if (!scope) return reply({ ...(await statusFor(tabId)), added:false });
 
         const out = await serial(async () => {
           const list = await readList(HubModel.KEYS.CH);
-          /* Same channel, whichever way its url is spelled. */
+          /* Same account, whichever way its url is spelled — which on YouTube
+             is four ways and on Instagram is one. */
           const already = list.some(c => {
-            const s2 = HubScope.parse(c.url);
+            if (HubModel.platformOf(c.url) !== platform) return false;
+            const s2 = rules.parse(c.url);
             return s2 && s2.kind === scope.kind && s2.key === scope.key;
           });
           if (already) return { already:true };
 
-          list.push(HubModel.makeChannel({ url, name:msg.name, desc:'', cat:'' }));
+          list.push(HubModel.makeChannel({ url, name:msg.name, desc:'', cat:'', platform }));
           await writeList(HubModel.KEYS.CH, list);
           return { already:false };
         });
@@ -234,6 +280,30 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
         if (msg.videoId)
           await editGrant(tab.id, () => HubScope.withVideo(HubScope.emptyGrant(), msg.videoId));
         return reply(await statusFor(tabId));
+      }
+
+      /* A tab, and nothing else done to it. There is no guard on instagram.com,
+         so there is no grant to write and nothing to unlock — which is what
+         makes this a different case from `openInTab` rather than a flag on it. */
+      case 'openPlain': {
+        const url = HubModel.normUrl(msg.url);
+        if (!url) return reply(null);
+        await chrome.tabs.create({ url });
+        return reply({ opened:true });
+      }
+
+      /* The board asking for one account to be looked at. */
+      case 'igProbe':
+        return reply(await probeInstagram(HubModel.normUrl(msg.url), msg.timeout));
+
+      /* The content script on an instagram page, saying what it can see. Kept
+         when it answers a probe this worker is waiting on, dropped otherwise —
+         which is what lets the content script report unconditionally and stay
+         free of any idea about who is watching. */
+      case 'igReport': {
+        const done = tabId != null && probes.get(tabId);
+        if (done) done(msg);
+        return reply({ ok:!!done });
       }
 
       case 'setEnabled':
@@ -261,6 +331,11 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
 chrome.tabs.onRemoved.addListener(tabId => {
   editGrant(tabId, () => null);
   setBypass(tabId, 0);
+  /* Closing a probe tab by hand is a perfectly reasonable thing to do to a tab
+     that appeared on its own. It answers the probe with nothing rather than
+     leaving the board waiting out the whole timeout. */
+  const done = probes.get(tabId);
+  if (done) done(null);
 });
 
 /* ── One thing deliberately not done ─────────────────────────────────────────

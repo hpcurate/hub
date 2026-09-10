@@ -1,0 +1,32 @@
+/* ── The one thing HUB draws on instagram.com ─────────────────────────────────
+   There is no guard on this half, so there is no overlay, no blur and no bar —
+   only this button, and only in add mode. It borrows the board's tokens by
+   value rather than by variable, because a content script's stylesheet lands in
+   Instagram's page and cannot see HUB's own :root. */
+.hub-ig-add{
+  all:unset;
+  box-sizing:border-box;
+  display:inline-flex;align-items:center;justify-content:center;
+  height:32px;padding:0 14px;margin:0 0 0 8px;
+  background:#A78BFA;color:#0e0e0e;
+  border:1px solid #A78BFA;border-radius:8px;
+  font:700 12px/1 'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  letter-spacing:.04em;white-space:nowrap;cursor:pointer;
+  transition:filter .12s cubic-bezier(.4,0,.2,1),transform .12s cubic-bezier(.4,0,.2,1);
+}
+.hub-ig-add:hover{filter:brightness(1.08)}
+.hub-ig-add:active{transform:translateY(1px)}
+.hub-ig-add:disabled{opacity:.6;cursor:default}
+.hub-ig-add:focus-visible{outline:2px solid #A78BFA;outline-offset:2px}
+
+/* When the header has moved and the button has nowhere of its own to sit, it
+   parks in the corner rather than disappearing into the top of the document. */
+.hub-ig-add:not(.inline){
+  position:fixed;z-index:2147483000;
+  right:18px;bottom:18px;margin:0;
+  box-shadow:0 10px 34px -12px rgba(0,0,0,.65);
+}
+
+@media (prefers-reduced-motion: reduce){
+  .hub-ig-add{transition:none}
+}
