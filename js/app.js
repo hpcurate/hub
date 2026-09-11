@@ -1964,6 +1964,8 @@ const SETTINGS = [
     { k:'addMode',     t:'toggle', label:'add mode',
       note:'stops the guard and puts a + add button on channel pages', ext:true },
     { k:'queueButton', t:'toggle', label:'a + queue button on video pages', ext:true },
+    { k:'addOnVideo',  t:'toggle', label:'an + add channel button on video pages',
+      note:'files the channel you are watching, into a category you pick', ext:true },
     { k:'checkNew',    t:'toggle', label:'check channels for new videos', ext:true },
     { k:'checkEvery',  t:'range',  label:'how often the feed is checked', min:1, max:48, step:1,
       fmt:v => v + 'h', ext:true },

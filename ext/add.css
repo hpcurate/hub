@@ -1,56 +1,109 @@
 /* ── The add button ───────────────────────────────────────────────────────────
-   Injected onto a YouTube channel page while add mode is on. Lives in a shadow
-   root, so YouTube's stylesheet cannot reach it and this cannot reach YouTube's.
-   It is the only thing the extension draws on a page now that the overlay is
-   gone — a blocked page changes address instead of being covered. */
+   Injected onto a YouTube page while there is something to offer on it — a
+   channel to file, a page full of them, a video to queue, or the channel behind
+   that video. Lives in a shadow root, so YouTube's stylesheet cannot reach it
+   and this cannot reach YouTube's. It is the only thing the extension draws on
+   a page now that the overlay is gone — a blocked page changes address instead
+   of being covered. */
 
 :host{ all:initial }
 
-/* Top centre, where it is asked for: YouTube's own masthead is the one strip
-   of a channel page that is always the same, and a button under it is in the
-   same place whatever the page is doing further down. */
-.btn{
+/* ── The row ──────────────────────────────────────────────────────────────────
+   Top centre, where it is asked for: YouTube's own masthead is the one strip of
+   a page that is always the same, and a button under it is in the same place
+   whatever the page is doing further down.
+
+   The row, rather than each button, is the thing that is positioned — a video
+   page carries two, and two buttons each centring themselves would be one
+   button with another one under it. */
+.bar{
   position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:2147483647;
+  display:flex;align-items:flex-start;gap:8px;
+  animation:rise .3s cubic-bezier(.34,1.4,.5,1);
+}
+@keyframes rise{from{opacity:0;transform:translate(-50%,-10px)}
+                 to{opacity:1;transform:translateX(-50%)}}
+
+/* A button and whatever hangs off it. Relative, because the category menu is
+   positioned against its own button rather than against the row. */
+.slot{ position:relative;display:flex;flex-direction:column;align-items:center }
+
+.btn{
   display:flex;align-items:center;gap:8px;
   height:38px;padding:0 16px;cursor:pointer;
   background:#A78BFA;border:1px solid #A78BFA;border-radius:19px;
   font:700 12px/1 'JetBrains Mono','Courier New',monospace;letter-spacing:.06em;
   color:#0e0e0e;
   box-shadow:0 10px 34px -12px rgba(0,0,0,.75);
-  animation:rise .3s cubic-bezier(.34,1.4,.5,1);
   transition:transform .12s cubic-bezier(.4,0,.2,1),filter .12s cubic-bezier(.4,0,.2,1);
 }
-@keyframes rise{from{opacity:0;transform:translate(-50%,-10px)}
-                 to{opacity:1;transform:translateX(-50%)}}
 .btn:hover{filter:brightness(1.08)}
-.btn:active{transform:translate(-50%,1px)}
+.btn:active{transform:translateY(1px)}
 
 /* Added, and already on the board. Both say so in place rather than moving
    anything — the button is on someone else's page and should not take over it. */
 .btn.done{background:#5cdb7d;border-color:#5cdb7d;cursor:default}
 .btn.have{background:#161616;border-color:#333;color:#9a9a9a;cursor:default}
 .btn.done:hover,.btn.have:hover{filter:none}
+.btn.done:active,.btn.have:active{transform:none}
 
 .btn small{
   font:500 9px/1 inherit;letter-spacing:.14em;text-transform:uppercase;opacity:.7;
 }
 
+/* ── The category menu ───────────────────────────────────────────────────────
+   The second half of adding a channel from a video: which board shelf it goes
+   on. It hangs under its own button, in the board's own order — favourites
+   first, when the board says so — and every category carries its colour, which
+   is the thing the eye picks a shelf by on the board itself. */
+.menu{
+  position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%);
+  min-width:196px;max-height:60vh;overflow:auto;
+  display:flex;flex-direction:column;gap:2px;padding:6px;
+  background:#0e0e0e;border:1px solid #2a2a2a;border-radius:12px;
+  box-shadow:0 18px 44px -16px rgba(0,0,0,.9);
+  animation:fade-in .14s cubic-bezier(.4,0,.2,1);
+}
+@keyframes fade-in{from{opacity:0}to{opacity:1}}
+
+.menu-head{
+  padding:6px 8px 5px;
+  font:500 9px/1 'JetBrains Mono','Courier New',monospace;
+  letter-spacing:.14em;text-transform:uppercase;color:#6a6a6a;
+}
+
+.item{
+  display:flex;align-items:center;gap:9px;
+  width:100%;padding:8px;cursor:pointer;text-align:left;
+  background:transparent;border:0;border-radius:8px;
+  font:500 12px/1 'JetBrains Mono','Courier New',monospace;color:#e6e6e6;
+  transition:background .1s cubic-bezier(.4,0,.2,1);
+}
+.item:hover{background:#1b1b1b}
+.item i{width:8px;height:8px;border-radius:50%;background:#555;flex:none}
+.item.none{color:#9a9a9a}
+.item.none i{background:transparent;border:1px solid #3a3a3a}
+
 /* ── In the channel's own action row ─────────────────────────────────────────
    Asked for: beside Subscribe and Join rather than floating over the page.
    The host element is appended into that row, so it sits in the flow and the
    row's own alignment carries it; the shadow root means YouTube's stylesheet
-   still cannot reach anything in here. When the row cannot be found the button
-   keeps its floating position, because a button you cannot find is no button. */
+   still cannot reach anything in here. When the row cannot be found the row of
+   buttons keeps its floating position, because a button you cannot find is no
+   button. */
 :host(.inline){
   display:inline-flex;align-items:center;
   margin-left:8px;vertical-align:middle;
 }
-.btn.inline{
+/* Every one of these hangs off the host's own class, which is added only when
+   the row was actually found. A button that is still floating therefore keeps
+   the floating shape, whatever it was built as. */
+:host(.inline) .bar{
   position:static;transform:none;
-  height:36px;padding:0 15px;border-radius:18px;
-  box-shadow:none;
   animation:fade-in .22s cubic-bezier(.4,0,.2,1);
 }
-@keyframes fade-in{from{opacity:0}to{opacity:1}}
-.btn.inline:active{transform:translateY(1px)}
-.btn.inline small{display:none}
+:host(.inline) .btn{
+  height:36px;padding:0 15px;border-radius:18px;
+  box-shadow:none;
+}
+:host(.inline) .btn small{display:none}

@@ -38,7 +38,7 @@
    else's server. Once fetched they never need fetching again.
 */
 
-const VERSION = 'v0.19.0';
+const VERSION = 'v0.20.0';
 const SHELL   = 'hub-shell-' + VERSION;
 const FONTS   = 'hub-fonts-' + VERSION;
 

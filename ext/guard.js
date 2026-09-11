@@ -23,8 +23,11 @@
   const ADD_ID = 'hub-add-root';
 
   let bypass = false;                        /* set by the board, or by escape */
-  let addBtn = null;
-  let addKind = null;                        /* what the injected button is for */
+  let addBtn = null;                         /* the host, one per page */
+  let addBar = null;                         /* the row of buttons inside it */
+  let addKeys = new Set();                   /* which buttons are already in it */
+  let addKind = null;                        /* what the injected bar is for */
+  let closePicker = null;                    /* the one open category menu */
   let lastUrl = location.href;
   let seq = 0;                               /* cancels the work of a stale url */
   let gone = false;                          /* a redirect is under way */
@@ -165,9 +168,12 @@
   }
 
   function dropAdd(){
+    addKind = null;
+    addBar = null;
+    addKeys = new Set();
+    closePicker = null;
     if (!addBtn) return;
     addBtn.remove(); addBtn = null;
-    addKind = null;
   }
 
   /* ── Where the button goes ───────────────────────────────────────────────────
@@ -207,14 +213,21 @@
     obs.observe(document.documentElement, { childList:true, subtree:true });
   }
 
-  /* One button, one shadow root, whatever it says. `kind` is what stops it
-     being rebuilt on every SPA tick, and what lets a page change its mind. */
-  function mountButton(kind, { label, sub, onClick, inline }){
-    if (addBtn && addKind === kind) return;
+  /* One host, one shadow root, and a row inside it. `kind` is what stops the
+     row being rebuilt on every SPA tick, and what lets a page change its mind.
+
+     It is a row rather than a single button because a video page has two
+     things to offer — keep the video, keep whoever made it — and they arrive
+     at different times: the queue button knows everything it needs from the
+     url, while the add button has to read the owner and ask the board about it
+     first. Appending the second into a row that is already up is what keeps
+     the first from being rebuilt underneath a click. */
+  function mountBar(kind, { inline } = {}){
+    if (addBtn && addKind === kind) return true;
     dropAdd();
 
     let cssUrl;
-    try { cssUrl = chrome.runtime.getURL('ext/add.css') } catch { return }
+    try { cssUrl = chrome.runtime.getURL('ext/add.css') } catch { return false }
 
     addKind = kind;
     addBtn = document.createElement('div');
@@ -224,25 +237,9 @@
     const css = document.createElement('link');
     css.rel = 'stylesheet'; css.href = cssUrl;
 
-    const b = document.createElement('button');
-    b.className = 'btn';
-    const say = (text, note, cls) => {
-      b.textContent = text;
-      if (note){ const s2 = document.createElement('small'); s2.textContent = note; b.appendChild(s2) }
-      if (cls) b.classList.add(cls);
-    };
-    say(label, sub);
-
-    b.addEventListener('click', async () => {
-      if (b.classList.contains('done') || b.classList.contains('have')) return;
-      const res = await onClick();
-      if (!res) return;
-      b.textContent = '';
-      b.classList.remove('done', 'have');
-      say(res.text, res.sub || '', res.already ? 'have' : 'done');
-    });
-
-    root.append(css, b);
+    addBar = document.createElement('div');
+    addBar.className = 'bar';
+    root.append(css, addBar);
 
     /* Shown at once, floating, and moved into the channel's action row when
        that row turns up. Waiting for the row before showing anything would mean
@@ -253,15 +250,118 @@
     if (inline) whenRow(6000, row => {
       if (!row || !addBtn) return;
       addBtn.classList.add('inline');
-      b.classList.add('inline');
       row.appendChild(addBtn);
     });
+    return true;
+  }
+
+  /* A click anywhere else closes the open menu. One listener for the page
+     rather than one per button: a session on YouTube is one document for hours,
+     and a listener left behind by every button that was ever mounted is a leak
+     with nothing to end it. A click inside the shadow root is retargeted to the
+     host, which is the one case ignored. */
+  addEventListener('pointerdown', e => {
+    if (closePicker && e.target !== addBtn) closePicker();
+  }, true);
+
+  /* ── One button in the row ────────────────────────────────────────────────
+     `state` is what it says before it is touched — `have` is the answer to
+     "make it know if you have already added a channel", which is a thing the
+     board can be asked rather than something to find out by clicking.
+
+     `pick` turns the click into a menu instead of an action: the categories,
+     as the board orders them, and then the action with the one chosen. */
+  function makeButton({ label, sub, state, onClick, pick }){
+    const slot = document.createElement('div');
+    slot.className = 'slot';
+
+    const b = document.createElement('button');
+    b.className = 'btn' + (state ? ' ' + state : '');
+    const say = (text, note) => {
+      b.textContent = text;
+      if (note){ const s = document.createElement('small'); s.textContent = note; b.appendChild(s) }
+    };
+    say(label, sub);
+
+    let menu = null;
+    const closeMenu = () => {
+      if (!menu) return;
+      menu.remove(); menu = null;
+      if (closePicker === closeMenu) closePicker = null;
+    };
+
+    const settle = res => {
+      closeMenu();
+      b.className = 'btn' + (res.already ? ' have' : ' done');
+      say(res.text, res.sub || '');
+    };
+
+    const spent = () => b.classList.contains('done') || b.classList.contains('have');
+
+    /* The menu, built on demand and thrown away on every close, because the
+       board's categories can have changed between two openings of it.
+
+       Escape is not a way out of it on purpose: three of those inside two
+       seconds is the guard's own hatch, and a menu that quietly eats the first
+       one would make that hatch unreliable on exactly the pages it is for.
+       A click anywhere else, or on the button again, closes it. */
+    function openMenu(){
+      const items = (pick && pick.items) || [];
+      menu = document.createElement('div');
+      menu.className = 'menu';
+
+      const head = document.createElement('div');
+      head.className = 'menu-head';
+      head.textContent = pick.head || 'file it under';
+      menu.appendChild(head);
+
+      const row = (item, none) => {
+        const el = document.createElement('button');
+        el.className = 'item' + (none ? ' none' : '');
+        const dot = document.createElement('i');
+        if (!none) dot.style.background = item.color || '#555';
+        el.append(dot, document.createTextNode(item.name));
+        el.addEventListener('click', async () => {
+          if (spent()) return;
+          const res = await pick.onPick(item);
+          if (res) settle(res);
+          else closeMenu();
+        });
+        return el;
+      };
+
+      items.forEach(c => menu.appendChild(row(c, false)));
+      menu.appendChild(row({ id:'', name:'no category' }, true));
+      slot.appendChild(menu);
+      closePicker = closeMenu;
+    }
+
+    b.addEventListener('click', async () => {
+      if (spent()) return;
+      if (pick){
+        if (menu) return closeMenu();
+        return openMenu();
+      }
+      const res = await onClick();
+      if (res) settle(res);
+    });
+
+    slot.appendChild(b);
+    return slot;
+  }
+
+  /* Into the row that is already up, once, by key. */
+  function addToBar(key, spec){
+    if (!addBar || addKeys.has(key)) return;
+    addKeys.add(key);
+    addBar.appendChild(makeButton(spec));
   }
 
   /* ── The three things it can be ─────────────────────────────────────────── */
   function addOnChannel(scope){
-    mountButton('channel:' + scope.kind + scope.key, {
-      label:'+ add to hub', sub:'add mode', inline:true,
+    if (!mountBar('channel:' + scope.kind + scope.key, { inline:true })) return;
+    addToBar('add', {
+      label:'+ add to hub', sub:'add mode',
       onClick: async () => {
         const res = await ask({ type:'addChannel',
                                 url: HubScope.channelUrl(scope), name: channelTitle() });
@@ -291,8 +391,9 @@
   }
 
   function addAllHere(){
-    mountButton('bulk', {
-      label:'+ add every channel here', sub:'add mode', inline:false,
+    if (!mountBar('bulk')) return;
+    addToBar('bulk', {
+      label:'+ add every channel here', sub:'add mode',
       onClick: async () => {
         const items = collectChannels();
         if (!items.length) return { text:'nothing to add here', already:true };
@@ -306,8 +407,8 @@
 
   function queueHere(page){
     if (!page.videoId) return;
-    mountButton('queue:' + page.videoId, {
-      label:'+ queue', sub:'watch later', inline:false,
+    addToBar('queue', {
+      label:'+ queue', sub:'watch later',
       onClick: async () => {
         const owner = readOwner();
         const res = await ask({ type:'enqueue', videoId:page.videoId, url:location.href,
@@ -320,9 +421,75 @@
     });
   }
 
-  /* What, if anything, gets drawn on this page. One place, so the three
-     buttons can never be on screen together and none is left behind by an SPA
-     navigation. */
+  /* ── The channel behind the video ──────────────────────────────────────────
+     Adding a channel used to mean going to its page first. The thing you are
+     actually looking at when you decide you want more of someone is one of
+     their videos, and this is that decision made where it happens.
+
+     Three things the button has to do before it is any use: read who owns the
+     video, say whether that channel is already on the board rather than
+     waiting for a click to find out, and let the channel be filed into a
+     category on the way in — a board of forty uncategorised cards is the
+     thing categories exist to avoid.
+
+     `mine` is the navigation this was started for. YouTube is one document for
+     a whole session, so by the time the owner has been read and the board has
+     answered, the page may be a different video entirely — and a button for
+     the last one is worse than no button. */
+  async function addChannelHere(){
+    const mine = seq;
+    const stale = () => mine !== seq || gone || bypass;
+
+    const owner = readOwner() || await waitForOwner(6000);
+    if (stale() || !owner) return;
+
+    const url = HubScope.channelUrl(owner);
+    const info = await ask({ type:'addInfo', url });
+    if (stale() || !info) return;
+
+    const cats = Array.isArray(info.cats) ? info.cats : [];
+    const file = async cat => {
+      const res = await ask({ type:'addChannel', url, name:videoChannelName(), cat:cat.id });
+      if (!res) return null;
+      return { text: res.already ? 'already on the board' : 'added',
+               sub: res.added && cat.id ? cat.name : '', already: res.already };
+    };
+
+    addToBar('add', info.already
+      ? { label:'on the board', sub:'this channel', state:'have' }
+      : { label:'+ add channel', sub:'this channel',
+          /* One click opens the categories, the second files it. With no
+             categories on the board there is nothing to choose between, so the
+             click is the whole action. */
+          pick: cats.length ? { items:cats, head:'file it under', onPick:file } : null,
+          onClick: () => file({ id:'', name:'' }) });
+  }
+
+  /* The channel's name on a watch page, which is not `channelTitle()` — the
+     title of this document is the video. YouTube spells the owner's name in
+     several places and not all of them are there at once, so the first that
+     reads as a name wins and the url's own spelling is the fallback. */
+  const OWNER_NAME_SEL = [
+    'ytd-video-owner-renderer ytd-channel-name #text',
+    'ytd-video-owner-renderer #channel-name #text',
+    '#owner ytd-channel-name a',
+    '#upload-info ytd-channel-name a',
+    'ytd-channel-name a',
+    'link[itemprop="name"]',
+  ];
+
+  function videoChannelName(){
+    for (const sel of OWNER_NAME_SEL){
+      const el = document.querySelector(sel);
+      const name = el && (el.textContent || el.getAttribute('content') || '').trim();
+      if (name) return name.slice(0, 80);
+    }
+    return '';
+  }
+
+  /* What, if anything, gets drawn on this page. One place, so a page's buttons
+     can never be the last page's and none is left behind by an SPA navigation.
+     A video page is the one that can carry two. */
   const FEED_PAGES = ['/feed/channels', '/feed/subscriptions'];
 
   function draw(status, page){
@@ -332,9 +499,20 @@
       if (page && page.type === 'channel') return addOnChannel(page.scope);
       if (FEED_PAGES.some(p => location.pathname.startsWith(p))) return addAllHere();
     }
-    /* The queue button is not part of add mode: queueing a video you are
-       already allowed to be watching is an ordinary thing to want. */
-    if (status.queueButton !== false && page && page.type === 'watch') return queueHere(page);
+
+    /* Neither of these is part of add mode: queueing a video you are already
+       allowed to be watching is an ordinary thing to want, and so is keeping
+       the person who made it. */
+    if (page && page.type === 'watch'){
+      const queue = status.queueButton !== false && !!page.videoId;
+      const add = status.addOnVideo !== false;
+      if (queue || add){
+        if (!mountBar('watch:' + (page.videoId || location.pathname))) return;
+        if (queue) queueHere(page);
+        if (add) addChannelHere();
+        return;
+      }
+    }
 
     dropAdd();
   }

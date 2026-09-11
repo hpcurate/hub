@@ -302,7 +302,8 @@ console.log('\nputting a video aside');
   const t = boot({ url:'https://www.youtube.com/watch?v=vid1',
                    head:'<meta itemprop="channelId" content="UC9">',
                    answer: () => ({ enabled:true, guarding:false, addMode:false,
-                                    queueButton:false, snoozeUntil:0, grant:null }) });
+                                    queueButton:false, addOnVideo:false,
+                                    snoozeUntil:0, grant:null }) });
   await wait(60);
   ok('turned off in settings, there is no queue button', !t.addBtn());
   t.dom.window.close();
@@ -311,6 +312,110 @@ console.log('\nputting a video aside');
   const t = boot({ url:'https://www.youtube.com/@keep', answer: guarded() });
   await wait(60);
   ok('a channel page gets no queue button', !t.addBtn());
+  t.dom.window.close();
+}
+
+console.log('\nkeeping the channel behind the video');
+
+/* The watch page the add button is for: a video that is allowed to play, whose
+   owner the page says is UC9, on a board that answers what it holds. */
+const watching = ({ already = false, cats = [] } = {}) => msg => {
+  if (msg.type === 'addInfo') return { already, known:true, cats };
+  if (msg.type === 'addChannel') return { added:!already, already };
+  return { enabled:true, guarding:true, snoozeUntil:0,
+           grant:{ handles:[], ids:['UC9'], names:[], videos:[] } };
+};
+const WATCH = { url:'https://www.youtube.com/watch?v=vid1',
+                head:'<meta itemprop="channelId" content="UC9">' +
+                     '<meta property="og:title" content="A good video">',
+                body:'<ytd-channel-name><a href="/@keep">Keep</a></ytd-channel-name>' };
+const CATS = [{ id:'c1', name:'learning', color:'#A78BFA' },
+              { id:'c2', name:'making', color:'#E0A060' }];
+const buttons = t => [...t.addBtn().shadowRoot.querySelectorAll('button.btn')];
+const text = b => b.childNodes[0].textContent;
+
+{
+  const t = boot({ ...WATCH, answer: watching({ cats:CATS }) });
+  await wait(60);
+  ok('a video page carries the queue button and the add button, in that order',
+     buttons(t).length === 2 && text(buttons(t)[0]) === '+ queue'
+       && text(buttons(t)[1]) === '+ add channel',
+     buttons(t).map(text).join(' | '));
+  ok('and the board was asked about this video\u2019s channel, not the page',
+     t.sent.some(m => m.type === 'addInfo' && m.url === 'https://www.youtube.com/channel/UC9'),
+     JSON.stringify(t.sent.filter(m => m.type === 'addInfo')));
+
+  const add = buttons(t)[1];
+  add.dispatchEvent(new t.w.MouseEvent('click', { bubbles:true }));
+  await wait(20);
+  const menu = t.addBtn().shadowRoot.querySelector('.menu');
+  ok('clicking it opens the categories rather than filing it straight away',
+     !!menu && !t.sent.some(m => m.type === 'addChannel'));
+  const items = menu ? [...menu.querySelectorAll('.item')] : [];
+  ok('every category on the board is in it, and no category as well',
+     items.map(i => i.textContent).join(',') === 'learning,making,no category',
+     items.map(i => i.textContent).join(','));
+
+  items[1].dispatchEvent(new t.w.MouseEvent('click', { bubbles:true }));
+  await wait(40);
+  const msg = t.sent.find(m => m.type === 'addChannel');
+  ok('picking one files the channel', !!msg, JSON.stringify(t.sent));
+  ok('with the channel url', msg && msg.url === 'https://www.youtube.com/channel/UC9');
+  ok('the category that was picked', msg && msg.cat === 'c2', msg && msg.cat);
+  ok('and the channel\u2019s name, not the video\u2019s title', msg && msg.name === 'Keep', msg && msg.name);
+  ok('the menu closes behind it', !t.addBtn().shadowRoot.querySelector('.menu'));
+  ok('and the button says what happened', text(buttons(t)[1]) === 'added'
+     && buttons(t)[1].classList.contains('done'));
+  t.dom.window.close();
+}
+{
+  const t = boot({ ...WATCH, answer: watching({ already:true, cats:CATS }) });
+  await wait(60);
+  const add = buttons(t)[1];
+  ok('a channel already on the board says so before it is clicked',
+     text(add) === 'on the board' && add.classList.contains('have'), text(add));
+  add.dispatchEvent(new t.w.MouseEvent('click', { bubbles:true }));
+  await wait(40);
+  ok('and clicking it files nothing and opens nothing',
+     !t.sent.some(m => m.type === 'addChannel')
+       && !t.addBtn().shadowRoot.querySelector('.menu'));
+  t.dom.window.close();
+}
+{
+  const t = boot({ ...WATCH, answer: watching({ cats:[] }) });
+  await wait(60);
+  buttons(t)[1].dispatchEvent(new t.w.MouseEvent('click', { bubbles:true }));
+  await wait(40);
+  const msg = t.sent.find(m => m.type === 'addChannel');
+  ok('with no categories to choose between, one click is the whole thing',
+     !!msg && msg.cat === '', JSON.stringify(msg));
+  t.dom.window.close();
+}
+{
+  const t = boot({ ...WATCH,
+                   answer: msg => msg.type === 'addInfo' ? null
+                     : ({ enabled:true, guarding:true, snoozeUntil:0,
+                          grant:{ handles:[], ids:['UC9'], names:[], videos:[] } }) });
+  await wait(60);
+  ok('a board that cannot answer leaves the queue button and adds nothing else',
+     buttons(t).length === 1 && text(buttons(t)[0]) === '+ queue',
+     buttons(t).map(text).join(' | '));
+  t.dom.window.close();
+}
+{
+  const t = boot({ ...WATCH,
+                   answer: msg => ({ ...watching({ cats:CATS })(msg), addOnVideo:false }) });
+  await wait(60);
+  ok('turned off in settings, a video page is back to one button',
+     buttons(t).length === 1 && text(buttons(t)[0]) === '+ queue');
+  t.dom.window.close();
+}
+{
+  const t = boot({ url:'https://www.youtube.com/@keep',
+                   answer: msg => ({ ...watching({ cats:CATS })(msg),
+                                     grant:{ handles:['@keep'], ids:[], names:[], videos:[] } }) });
+  await wait(60);
+  ok('and a channel page still gets neither of them', !t.addBtn());
   t.dom.window.close();
 }
 

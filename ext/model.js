@@ -374,6 +374,11 @@ const HubModel = (() => {
     /* The extension. checkEvery is in hours; a feed that is polled harder than
        this tells you nothing more, because uploads are not that frequent. */
     queueButton:true, checkNew:true, checkEvery:6,
+    /* The other button a video page can carry: file the channel you are
+       watching, without going to its page first. Separate from `queueButton`
+       because they answer different wants — one keeps the video, the other
+       keeps whoever made it — and either is a reasonable thing to turn off. */
+    addOnVideo:true,
     /* How many channels are asked about at once, and how many days an avatar is
        trusted for. The first is the whole of "make the refresh faster"; the
        second is why a refresh no longer re-reads forty channel pages to learn

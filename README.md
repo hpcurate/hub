@@ -47,6 +47,12 @@ motion tokens, Grotesk for titles and JetBrains Mono for everything else.
 - **A queue** — Watch Later lives behind the feed, which the guard removes. The
   **+ queue** button on any video page puts one aside here instead. Opening it
   unlocks that video, not its whole channel.
+- **Keeping the channel behind the video** — the moment you decide you want more
+  of someone is usually a video of theirs, not their channel page, so **+ add
+  channel** sits beside the queue button on every video. It says *on the board*
+  when the channel is already there rather than making you click to find out,
+  and a click opens the categories so the channel is filed on the way in. Both
+  buttons are settings, and either can be off.
 - **Colour coding** — a category's colour is its spine down the left of every
   card, its dot on the filter chip, and a faint wash across the tile.
 - **Sort** — last viewed, longest unwatched, recently added, name, category,

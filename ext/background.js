@@ -74,6 +74,38 @@ async function readList(key){
 }
 const writeList = (key, list) => chrome.storage.local.set({ [key]: JSON.stringify(list) });
 
+/* Is this account already on the board, and under which rule book? One answer
+   for the two callers that need it — the button that files a channel, and the
+   button asking what to say before it is clicked — because "the same account,
+   whichever way its url is spelled" is four spellings on YouTube and one on
+   Instagram, and two copies of that would eventually disagree. */
+function heldBy(list, url){
+  const platform = HubModel.platformOf(url);
+  const rules = platform === 'instagram' ? HubIG : HubScope;
+  const scope = rules.parse(url);
+  if (!scope) return null;
+  const already = list.some(c => {
+    if (HubModel.platformOf(c.url) !== platform) return false;
+    const s2 = rules.parse(c.url);
+    return s2 && s2.kind === scope.kind && s2.key === scope.key;
+  });
+  return { platform, scope, already };
+}
+
+/* The categories of one board, in the order a list you pick from should show
+   them. Favourites first when the board says so, which is the same rule the
+   chips and the filing bar follow. */
+async function pickCats(platform, ui){
+  const all = (await readList(HubModel.KEYS.CAT)).map(HubModel.fillCat)
+    .filter(c => c.platform === platform && c.id);
+  const order = ui.favFirst === false
+    ? all
+    : all.filter(c => c.fav).concat(all.filter(c => !c.fav));
+  /* Three fields, because three is what a menu of colours and names can use.
+     The rest of a category is the board's business. */
+  return order.map(c => ({ id:c.id, name:c.name, color:c.color }));
+}
+
 async function patchUi(patch){
   const next = { ...(await uiSettings()), ...patch };
   await chrome.storage.local.set({ [HubModel.KEYS.UI]: JSON.stringify(next) });
@@ -93,6 +125,7 @@ async function statusFor(tabId){
     snoozeUntil: s.snoozeUntil || 0,
     addMode: !!u.addMode,
     queueButton: u.queueButton !== false,
+    addOnVideo: u.addOnVideo !== false,
     bypassed: dismissed,
     guarding: s.enabled && !paused && !u.addMode && !dismissed,
     grant: tabId == null ? null : await grantFor(tabId),
@@ -248,27 +281,41 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
            from the caller: a content script is not the authority on what site
            it is running on. */
         const platform = HubModel.platformOf(url);
-        const rules = platform === 'instagram' ? HubIG : HubScope;
-        const scope = rules.parse(url);
-        if (!scope) return reply({ ...(await statusFor(tabId)), added:false });
 
         const out = await serial(async () => {
           const list = await readList(HubModel.KEYS.CH);
-          /* Same account, whichever way its url is spelled — which on YouTube
-             is four ways and on Instagram is one. */
-          const already = list.some(c => {
-            if (HubModel.platformOf(c.url) !== platform) return false;
-            const s2 = rules.parse(c.url);
-            return s2 && s2.kind === scope.kind && s2.key === scope.key;
-          });
-          if (already) return { already:true };
+          const held = heldBy(list, url);
+          if (!held) return { bad:true };
+          if (held.already) return { already:true };
 
-          list.push(HubModel.makeChannel({ url, name:msg.name, desc:'', cat:'', platform }));
+          /* A category the caller picked from the menu, checked against the
+             board's own list rather than trusted: an id that names nothing
+             would file the channel somewhere it can never be found again. */
+          const cats = await pickCats(held.platform, await uiSettings());
+          const cat = cats.some(c => c.id === msg.cat) ? msg.cat : '';
+
+          list.push(HubModel.makeChannel({ url, name:msg.name, desc:'', cat, platform }));
           await writeList(HubModel.KEYS.CH, list);
-          return { already:false };
+          return { already:false, cat };
         });
+        if (out.bad) return reply({ ...(await statusFor(tabId)), added:false });
 
-        return reply({ ...(await statusFor(tabId)), added:!out.already, already:out.already });
+        return reply({ ...(await statusFor(tabId)),
+                       added:!out.already, already:out.already, cat:out.cat || '' });
+      }
+
+      /* What the "+ add channel" button on a video page has to know before it
+         is clicked: whether this channel is already on the board, and what it
+         could be filed under. One question rather than two, because the button
+         asks both the moment it appears. */
+      case 'addInfo': {
+        const url = HubModel.normUrl(msg.url);
+        const held = url ? heldBy(await readList(HubModel.KEYS.CH), url) : null;
+        const platform = (held && held.platform) || HubModel.platformOf(url) || 'youtube';
+        return reply({ ...(await statusFor(tabId)),
+                       known:!!held,
+                       already: !!held && held.already,
+                       cats: await pickCats(platform, await uiSettings()) });
       }
 
       /* Opening something out of the queue. The tab is granted that one video
